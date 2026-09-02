@@ -184,12 +184,11 @@ dẫn file, vì Secrets chỉ lưu được text.
 Vào tab **Actions** trên GitHub → chọn workflow tạo Campaign → **Run workflow**.
 Workflow đọc các Secrets đã cấu hình và chạy `python run.py --from-sheet`.
 
-Workflow **7️⃣ Tạo Campaign Doanh số Website** cũng đọc tab `Lên Camp`, nhưng
-không sử dụng `POST_ID` hoặc `CHAT_TEMPLATE`. Mỗi dòng cần có các header
-`Telegram_video_link`, `Text_Content`, `Title`, `URL_Ladi` và `Pixel`. Workflow
-tải video từ Telegram, dùng URL Website và Dataset/Pixel riêng của từng dòng,
-tối ưu sự kiện `PURCHASE` và dùng nút `ORDER_NOW`. Dòng đã có `RESULT` sẽ được
-bỏ qua.
+Workflow **7️⃣ Tạo Campaign Doanh số Website** đọc cấu hình, `URL_Ladi` và
+`Pixel` từ tab `Lên Camp`; không sử dụng `POST_ID` hoặc `CHAT_TEMPLATE`. Workflow
+dùng `Mã` để lấy `Telegram_video_link`, `Text_Content` và `Title` của cùng sản
+phẩm từ tab `Bài viết`, tải video từ Telegram, tối ưu sự kiện `PURCHASE` và dùng
+nút `ORDER_NOW`. Dòng đã có `RESULT` sẽ được bỏ qua.
 
 Muốn chạy trên máy cá nhân thay vì Actions: set 3 secrets trên thành biến môi
 trường của shell (`GOOGLE_SERVICE_ACCOUNT_FILE` trỏ tới đường dẫn file JSON thật

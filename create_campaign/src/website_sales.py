@@ -18,7 +18,12 @@ from src.creative import (
     wait_for_video_thumbnail,
 )
 from src.fb_client import get_ad_account, init_api
-from src.sheet_client import get_worksheet, read_website_sales_rows, write_result
+from src.sheet_client import (
+    get_worksheet,
+    read_website_assets,
+    read_website_sales_rows,
+    write_result,
+)
 from src.telegram_client import TelegramDownloader
 
 
@@ -38,7 +43,8 @@ async def run(*, limit: int | None = None) -> None:
         raise ValueError("TELEGRAM_API_ID phải là số nguyên") from exc
 
     worksheet = get_worksheet()
-    rows = read_website_sales_rows(worksheet)
+    assets = read_website_assets(get_worksheet("Bài viết"))
+    rows = read_website_sales_rows(worksheet, assets)
     if limit is not None:
         rows = rows[:limit]
     if not rows:

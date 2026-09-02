@@ -121,12 +121,12 @@ def _get_client() -> gspread.Client:
     return gspread.authorize(creds)
 
 
-def get_worksheet() -> gspread.Worksheet:
+def get_worksheet(tab_name: str | None = None) -> gspread.Worksheet:
     """Mở đúng tab (worksheet) trong Google Sheet dựa theo GOOGLE_SHEET_ID / GOOGLE_SHEET_TAB."""
     sheet_id = os.getenv("GOOGLE_SHEET_ID")
     if not sheet_id:
         raise EnvironmentError("Thiếu GOOGLE_SHEET_ID trong .env")
-    tab_name = os.getenv("GOOGLE_SHEET_TAB", "Data")
+    tab_name = tab_name or os.getenv("GOOGLE_SHEET_TAB", "Data")
 
     client = _get_client()
     spreadsheet = client.open_by_key(sheet_id)
@@ -323,7 +323,43 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
     return rows
 
 
-def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRow]:
+def read_website_assets(worksheet: gspread.Worksheet) -> dict[str, tuple[str, str, str]]:
+    """Đọc video, nội dung và tiêu đề từ tab Bài viết, ánh xạ theo Mã."""
+    values = worksheet.get_all_values()
+    if not values:
+        return {}
+    header_map = _build_header_map(values[HEADER_ROW - 1])
+    columns = {
+        name: _col_to_index(header_map, name)
+        for name in [COL_GROUP_AD_NAME, COL_TELEGRAM_LINK, COL_TEXT_CONTENT, COL_TITLE]
+    }
+
+    def cell(row: list[str], name: str) -> str:
+        index = columns[name]
+        return row[index].strip() if index < len(row) else ""
+
+    assets: dict[str, tuple[str, str, str]] = {}
+    for row_number, row in enumerate(values[HEADER_ROW:], start=FIRST_DATA_ROW):
+        code = cell(row, COL_GROUP_AD_NAME)
+        if not code:
+            continue
+        if code in assets:
+            raise ValueError(
+                f"Mã '{code}' bị trùng trong tab '{worksheet.title}' "
+                f"(phát hiện tại hàng {row_number})"
+            )
+        assets[code] = (
+            cell(row, COL_TELEGRAM_LINK),
+            cell(row, COL_TEXT_CONTENT),
+            cell(row, COL_TITLE),
+        )
+    return assets
+
+
+def read_website_sales_rows(
+    worksheet: gspread.Worksheet,
+    assets: dict[str, tuple[str, str, str]],
+) -> list[WebsiteSalesRow]:
     """Đọc các dòng dùng để tạo quảng cáo video chuyển đổi Website."""
     values = worksheet.get_all_values()
     if not values:
@@ -338,9 +374,6 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
         COL_DAILY_BUDGET,
         COL_SCHEDULE_DATE,
         COL_SCHEDULE_TIME,
-        COL_TELEGRAM_LINK,
-        COL_TEXT_CONTENT,
-        COL_TITLE,
         COL_WEBSITE_URL,
         COL_PIXEL,
         COL_GENDER,
@@ -362,8 +395,7 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
             raw[COL_PAGE_ID],
             raw[COL_CAMPAIGN_NAME],
             raw[COL_DAILY_BUDGET],
-            raw[COL_TELEGRAM_LINK],
-            raw[COL_TEXT_CONTENT],
+            raw[COL_GROUP_AD_NAME],
         ]):
             continue
         if raw[COL_RESULT]:
@@ -375,9 +407,6 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
                 COL_PAGE_ID,
                 COL_CAMPAIGN_NAME,
                 COL_DAILY_BUDGET,
-                COL_TELEGRAM_LINK,
-                COL_TEXT_CONTENT,
-                COL_TITLE,
                 COL_WEBSITE_URL,
                 COL_PIXEL,
             ]
@@ -385,6 +414,33 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
         ]
         if missing:
             write_result(worksheet, row_number, f"Lỗi: thiếu {', '.join(missing)}")
+            continue
+
+        code = raw[COL_GROUP_AD_NAME]
+        asset = assets.get(code)
+        if asset is None:
+            write_result(
+                worksheet,
+                row_number,
+                f"Lỗi: không tìm thấy Mã '{code}' trong tab 'Bài viết'",
+            )
+            continue
+        telegram_link, text_content, title = asset
+        missing_assets = [
+            name for name, value in [
+                (COL_TELEGRAM_LINK, telegram_link),
+                (COL_TEXT_CONTENT, text_content),
+                (COL_TITLE, title),
+            ]
+            if not value
+        ]
+        if missing_assets:
+            write_result(
+                worksheet,
+                row_number,
+                f"Lỗi: Mã '{code}' thiếu {', '.join(missing_assets)} "
+                "trong tab 'Bài viết'",
+            )
             continue
 
         try:
@@ -405,9 +461,9 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
             campaign_name=raw[COL_CAMPAIGN_NAME],
             group_ad_name=raw[COL_GROUP_AD_NAME] or None,
             daily_budget=daily_budget,
-            telegram_link=raw[COL_TELEGRAM_LINK],
-            text_content=raw[COL_TEXT_CONTENT],
-            title=raw[COL_TITLE],
+            telegram_link=telegram_link,
+            text_content=text_content,
+            title=title,
             website_url=raw[COL_WEBSITE_URL],
             pixel_id=raw[COL_PIXEL],
             schedule=schedule,
