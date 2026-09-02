@@ -16,15 +16,15 @@ class Settings:
     telegram_session: str
 
     @classmethod
-    def from_env(cls, *, dry_run: bool = False) -> "Settings":
-        required = ["GOOGLE_SHEET_ID", "GOOGLE_CREDENTIALS"]
-        if not dry_run:
-            required += [
-                "FB_ACCESS_TOKEN",
-                "TELEGRAM_API_ID",
-                "TELEGRAM_API_HASH",
-                "TELEGRAM_SESSION",
-            ]
+    def from_env(cls) -> "Settings":
+        required = [
+            "GOOGLE_SHEET_ID",
+            "GOOGLE_CREDENTIALS",
+            "FB_ACCESS_TOKEN",
+            "TELEGRAM_API_ID",
+            "TELEGRAM_API_HASH",
+            "TELEGRAM_SESSION",
+        ]
 
         missing = [name for name in required if not os.getenv(name)]
         if missing:

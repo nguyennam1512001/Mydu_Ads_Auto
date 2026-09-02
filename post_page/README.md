@@ -72,8 +72,6 @@ vào cột G cùng hàng.
 Mặc định công cụ bỏ qua dòng đã có `Text_Content`. Trong **Actions → Tạo Text
 Content từ Google Sheet → Run workflow**:
 
-- Giữ `dry_run` bật để xem trước danh sách sẽ xử lý mà không gọi AI.
-- Tắt `dry_run` để chạy thật.
 - Bật `overwrite` chỉ khi muốn viết lại content đã có.
 - Nhập `limit` để thử với một số ít sản phẩm.
 

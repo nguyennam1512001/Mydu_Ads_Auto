@@ -4,7 +4,6 @@ dựa theo 1 file cấu hình YAML.
 
 Cách chạy:
     python run.py config/campaigns.example.yaml
-    python run.py config/campaigns.example.yaml --dry-run
 """
 import argparse
 import copy
@@ -132,7 +131,7 @@ def _build_creative(account, ad_cfg: dict):
     )
 
 
-def process_campaign_config(account, camp_cfg: dict, dry_run: bool = False) -> dict:
+def process_campaign_config(account, camp_cfg: dict) -> dict:
     """
     Tạo 1 cây Campaign -> AdSet(s) -> Ad(s) dựa theo camp_cfg (dict cùng cấu
     trúc với 1 phần tử trong config/campaigns.yaml). Dùng chung cho cả 2 nguồn
@@ -146,71 +145,62 @@ def process_campaign_config(account, camp_cfg: dict, dry_run: bool = False) -> d
     adset_ids: list[str] = []
     ad_ids: list[str] = []
 
-    if dry_run:
-        campaign_id = "<sẽ-tạo>"
-    else:
-        campaign = create_campaign(
-            account,
-            name=camp_cfg["name"],
-            objective=camp_cfg.get("objective", "OUTCOME_ENGAGEMENT"),
-            status=camp_cfg.get("status", "PAUSED"),
-            special_ad_categories=camp_cfg.get("special_ad_categories", []),
-            daily_budget=camp_cfg.get("daily_budget"),
-            # bid_strategy phải khai báo ở Campaign khi dùng CBO
-            bid_strategy=(
-                camp_cfg.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP")
-                if camp_cfg.get("daily_budget")
-                else None
-            ),
-            bid_amount=camp_cfg.get("bid_amount"),
-        )
-        campaign_id = campaign["id"]
-        print(f"  -> Campaign ID: {campaign_id}")
+    campaign = create_campaign(
+        account,
+        name=camp_cfg["name"],
+        objective=camp_cfg.get("objective", "OUTCOME_ENGAGEMENT"),
+        status=camp_cfg.get("status", "PAUSED"),
+        special_ad_categories=camp_cfg.get("special_ad_categories", []),
+        daily_budget=camp_cfg.get("daily_budget"),
+        # bid_strategy phải khai báo ở Campaign khi dùng CBO
+        bid_strategy=(
+            camp_cfg.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP")
+            if camp_cfg.get("daily_budget")
+            else None
+        ),
+        bid_amount=camp_cfg.get("bid_amount"),
+    )
+    campaign_id = campaign["id"]
+    print(f"  -> Campaign ID: {campaign_id}")
 
     for adset_cfg in camp_cfg.get("adsets", []):
         print(f"  --- AdSet: {adset_cfg['name']}")
-        if dry_run:
-            adset_id = "<sẽ-tạo>"
-        else:
-            uses_campaign_budget = bool(camp_cfg.get("daily_budget"))
-            adset = create_adset(
-                account,
-                name=adset_cfg["name"],
-                campaign_id=campaign_id,
-                # Chỉ truyền daily_budget/bid_strategy ở AdSet khi KHÔNG dùng
-                # ngân sách cấp Campaign (CBO) - nếu dùng CBO thì 2 field này
-                # đã khai báo ở create_campaign() rồi, để trống ở đây.
-                daily_budget=(
-                    None if uses_campaign_budget else adset_cfg.get("daily_budget")
-                ),
-                billing_event=adset_cfg.get("billing_event", "IMPRESSIONS"),
-                optimization_goal=adset_cfg.get(
-                    "optimization_goal", "POST_ENGAGEMENT"
-                ),
-                targeting=adset_cfg["targeting"],
-                status=adset_cfg.get("status", "PAUSED"),
-                bid_strategy=(
-                    None
-                    if uses_campaign_budget
-                    else adset_cfg.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP")
-                ),
-                bid_amount=adset_cfg.get("bid_amount"),
-                start_time=adset_cfg.get("start_time"),
-                # Chỉ dùng promoted_object khi tự khai báo rõ trong config
-                # (VD chạy chiến dịch Lượt thích Trang) - KHÔNG tự suy ra,
-                # vì dễ khiến Facebook hiểu nhầm sang loại chiến dịch khác.
-                promoted_object=adset_cfg.get("promoted_object"),
-                destination_type=adset_cfg.get("destination_type"),
-            )
-            adset_id = adset["id"]
-            adset_ids.append(adset_id)
-            print(f"      -> AdSet ID: {adset_id}")
+        uses_campaign_budget = bool(camp_cfg.get("daily_budget"))
+        adset = create_adset(
+            account,
+            name=adset_cfg["name"],
+            campaign_id=campaign_id,
+            # Chỉ truyền daily_budget/bid_strategy ở AdSet khi KHÔNG dùng
+            # ngân sách cấp Campaign (CBO) - nếu dùng CBO thì 2 field này
+            # đã khai báo ở create_campaign() rồi, để trống ở đây.
+            daily_budget=(
+                None if uses_campaign_budget else adset_cfg.get("daily_budget")
+            ),
+            billing_event=adset_cfg.get("billing_event", "IMPRESSIONS"),
+            optimization_goal=adset_cfg.get(
+                "optimization_goal", "POST_ENGAGEMENT"
+            ),
+            targeting=adset_cfg["targeting"],
+            status=adset_cfg.get("status", "PAUSED"),
+            bid_strategy=(
+                None
+                if uses_campaign_budget
+                else adset_cfg.get("bid_strategy", "LOWEST_COST_WITHOUT_CAP")
+            ),
+            bid_amount=adset_cfg.get("bid_amount"),
+            start_time=adset_cfg.get("start_time"),
+            # Chỉ dùng promoted_object khi tự khai báo rõ trong config
+            # (VD chạy chiến dịch Lượt thích Trang) - KHÔNG tự suy ra,
+            # vì dễ khiến Facebook hiểu nhầm sang loại chiến dịch khác.
+            promoted_object=adset_cfg.get("promoted_object"),
+            destination_type=adset_cfg.get("destination_type"),
+        )
+        adset_id = adset["id"]
+        adset_ids.append(adset_id)
+        print(f"      -> AdSet ID: {adset_id}")
 
         for ad_cfg in adset_cfg.get("ads", []):
             print(f"      ..... Ad: {ad_cfg['name']}")
-            if dry_run:
-                continue
-
             creative = _build_creative(account, ad_cfg)
             ad = create_ad(
                 account,
@@ -225,21 +215,18 @@ def process_campaign_config(account, camp_cfg: dict, dry_run: bool = False) -> d
     return {"campaign_id": campaign_id, "adset_ids": adset_ids, "ad_ids": ad_ids}
 
 
-def run(config_path: str, dry_run: bool = False) -> None:
+def run(config_path: str) -> None:
     """Chạy từ 1 file cấu hình YAML cố định (cách cũ)."""
     load_dotenv()
 
     config = load_config(config_path)
 
-    if dry_run:
-        print("=== DRY-RUN: chỉ in kế hoạch, KHÔNG gọi API thật ===\n")
-    else:
-        init_api()
+    init_api()
 
-    account = get_ad_account() if not dry_run else None
+    account = get_ad_account()
 
     for camp_cfg in config.get("campaigns", []):
-        process_campaign_config(account, camp_cfg, dry_run=dry_run)
+        process_campaign_config(account, camp_cfg)
 
     print("\nHoàn tất!")
 
@@ -276,7 +263,7 @@ def _build_campaign_config_from_row(row: "sheet_client.SheetRow") -> dict:
     return cfg
 
 
-def run_from_sheet(dry_run: bool = False) -> None:
+def run_from_sheet() -> None:
     """
     Chạy từ Google Sheet: mỗi dòng dữ liệu (chưa có kết quả ở cột Kết quả) sẽ
     tạo ra 1 Campaign + 1 AdSet + 1 Ad, dùng chung cấu hình mẫu
@@ -285,10 +272,7 @@ def run_from_sheet(dry_run: bool = False) -> None:
     """
     load_dotenv()
 
-    if dry_run:
-        print("=== DRY-RUN: chỉ in kế hoạch, KHÔNG gọi API thật ===\n")
-    else:
-        init_api()
+    init_api()
 
     sheet_started = time.perf_counter()
     worksheet = sheet_client.get_worksheet()
@@ -309,25 +293,21 @@ def run_from_sheet(dry_run: bool = False) -> None:
         row_started = time.perf_counter()
         camp_cfg = _build_campaign_config_from_row(row)
         try:
-            if dry_run:
-                account = None
-            else:
-                account = accounts.get(row.ad_account_id)
-                if account is None:
-                    account = get_ad_account(row.ad_account_id)
-                    accounts[row.ad_account_id] = account
-            result = process_campaign_config(account, camp_cfg, dry_run=dry_run)
-            if not dry_run:
-                message = (
-                    f"Thành công - Campaign: {result['campaign_id']}, "
-                    f"AdSet: {result['adset_ids'][0]}, Ad: {result['ad_ids'][0]}"
-                )
-                sheet_client.write_result(worksheet, row.row_number, message)
-                print(
-                    f"  -> Dòng {row.row_number}: {message} "
-                    f"({time.perf_counter() - row_started:.2f}s)",
-                    flush=True,
-                )
+            account = accounts.get(row.ad_account_id)
+            if account is None:
+                account = get_ad_account(row.ad_account_id)
+                accounts[row.ad_account_id] = account
+            result = process_campaign_config(account, camp_cfg)
+            message = (
+                f"Thành công - Campaign: {result['campaign_id']}, "
+                f"AdSet: {result['adset_ids'][0]}, Ad: {result['ad_ids'][0]}"
+            )
+            sheet_client.write_result(worksheet, row.row_number, message)
+            print(
+                f"  -> Dòng {row.row_number}: {message} "
+                f"({time.perf_counter() - row_started:.2f}s)",
+                flush=True,
+            )
         except Exception as e:  # noqa: BLE001 - cố tình bắt mọi lỗi để ghi vào sheet
             error_message = f"Lỗi: {e}"
             print(
@@ -335,8 +315,7 @@ def run_from_sheet(dry_run: bool = False) -> None:
                 f"({time.perf_counter() - row_started:.2f}s)",
                 flush=True,
             )
-            if not dry_run:
-                sheet_client.write_result(worksheet, row.row_number, error_message)
+            sheet_client.write_result(worksheet, row.row_number, error_message)
 
     print("\nHoàn tất!")
 
@@ -355,19 +334,14 @@ def main() -> None:
         action="store_true",
         help="Đọc danh sách campaign cần tạo từ Google Sheet thay vì file YAML",
     )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Chỉ in ra kế hoạch sẽ tạo, không gọi API thật (an toàn để kiểm tra trước)",
-    )
     args = parser.parse_args()
 
     if args.from_sheet:
-        run_from_sheet(dry_run=args.dry_run)
+        run_from_sheet()
     else:
         if not args.config:
             parser.error("cần truyền đường dẫn config YAML, hoặc dùng --from-sheet")
-        run(args.config, dry_run=args.dry_run)
+        run(args.config)
 
 
 if __name__ == "__main__":

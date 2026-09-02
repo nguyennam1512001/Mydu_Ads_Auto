@@ -94,9 +94,7 @@ Repo trên GitHub → **Settings → Secrets and variables → Actions → tab S
 - `FB_AD_ACCOUNT_ID` (chỉ cần khi chạy chế độ file YAML ở Mục 4-6; chế độ
   Google Sheet ở Mục 4b lấy Ad Account ID riêng theo từng dòng nên không cần)
 
-> Muốn chạy thử trên máy cá nhân (không qua Actions) vẫn được — chỉ cần set các
-> biến này thành biến môi trường (environment variable) của shell trước khi chạy
-> `python run.py`, không bắt buộc phải tạo file `.env`.
+> Khi chạy trên máy cá nhân, set các giá trị trên thành biến môi trường của shell trước khi chạy `python run.py`; không bắt buộc tạo file `.env`.
 
 ---
 
@@ -183,35 +181,21 @@ Bước 1 (mở file bằng Notepad/VSCode, copy hết dán vào Value) — khô
 dẫn file, vì Secrets chỉ lưu được text.
 
 ### Bước 4 — Chạy
-Vào tab **Actions** trên GitHub → chọn workflow **"Tạo Campaign từ Google Sheet"**
-→ **Run workflow** → chọn `dry_run = true` để xem thử trước, hoặc `false` để chạy
-thật. Workflow (`.github/workflows/run-campaign-from-sheet.yml`) sẽ tự đọc các
-Secrets ở trên, ghi `GOOGLE_CREDENTIALS` ra thành file tạm rồi chạy
-`python run.py --from-sheet`, xoá file tạm sau khi chạy xong.
+Vào tab **Actions** trên GitHub → chọn workflow tạo Campaign → **Run workflow**.
+Workflow đọc các Secrets đã cấu hình và chạy `python run.py --from-sheet`.
 
 Muốn chạy trên máy cá nhân thay vì Actions: set 3 secrets trên thành biến môi
 trường của shell (`GOOGLE_SERVICE_ACCOUNT_FILE` trỏ tới đường dẫn file JSON thật
 trên máy), rồi chạy:
 ```bash
-python run.py --from-sheet --dry-run
 python run.py --from-sheet
 ```
 
 ---
 
-## 5. Chạy thử (dry-run) trước khi tạo thật
-
-Chạy qua GitHub Actions: tab **Actions** → chọn workflow **"Tạo Campaign Facebook Ads"**
-→ **Run workflow** → để `dry_run = true`. Hoặc chạy local:
-```bash
-python run.py config/campaigns.yaml --dry-run
-```
-Lệnh này chỉ in ra cây Campaign → AdSet → Ad sẽ được tạo, **không gọi API thật**,
-giúp bạn kiểm tra file YAML có đúng cấu trúc không trước khi tốn quota API.
-
 ## 6. Chạy thật
 
-Chạy qua GitHub Actions: chọn `dry_run = false` khi Run workflow. Hoặc chạy local:
+Chạy qua GitHub Actions: chọn workflow tạo Campaign và bấm **Run workflow**. Hoặc chạy local:
 ```bash
 python run.py config/campaigns.yaml
 ```

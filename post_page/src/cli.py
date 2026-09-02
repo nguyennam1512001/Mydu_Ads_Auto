@@ -18,12 +18,12 @@ from src.sheet_client import (
     COL_VIDEO_ID,
     SheetRepository,
 )
-from src.telegram_client import TelegramDownloader, parse_message_link
+from src.telegram_client import TelegramDownloader
 
 
-async def run(*, dry_run: bool = False, limit: int | None = None) -> None:
+async def run(*, limit: int | None = None) -> None:
     load_dotenv()
-    settings = Settings.from_env(dry_run=dry_run)
+    settings = Settings.from_env()
     sheet = SheetRepository(
         settings.google_sheet_id,
         settings.google_sheet_tab,
@@ -40,21 +40,6 @@ async def run(*, dry_run: bool = False, limit: int | None = None) -> None:
         return
 
     print(f"Tìm thấy {len(rows)} dòng cần xử lý.")
-    if dry_run:
-        for row in rows:
-            if row.post_link:
-                print(
-                    f"[DRY-RUN] Dòng {row.row_number}: lấy POST_ID từ "
-                    f"{row.post_link}"
-                )
-                continue
-            ref = parse_message_link(row.telegram_link)
-            print(
-                f"[DRY-RUN] Dòng {row.row_number}: Page {row.page_id}, "
-                f"Telegram entity={ref.entity}, message={ref.message_id}"
-            )
-        return
-
     publisher = FacebookPagePublisher(
         settings.fb_access_token,
         settings.fb_graph_version,
@@ -154,7 +139,6 @@ async def run(*, dry_run: bool = False, limit: int | None = None) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tự động đăng video lên Facebook Page")
-    parser.add_argument("--dry-run", action="store_true", help="Chỉ kiểm tra dữ liệu")
     parser.add_argument("--limit", type=int, help="Giới hạn số dòng xử lý")
     args = parser.parse_args()
-    asyncio.run(run(dry_run=args.dry_run, limit=args.limit))
+    asyncio.run(run(limit=args.limit))

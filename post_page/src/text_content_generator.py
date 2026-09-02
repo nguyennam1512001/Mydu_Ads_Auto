@@ -223,12 +223,11 @@ def max_workers_for(product_count: int) -> int:
 def run(
     *,
     prompt_name: str,
-    dry_run: bool = False,
     overwrite: bool = False,
     limit: int | None = None,
 ) -> None:
     api_key = os.getenv("GEMINI_API_KEY")
-    if not dry_run and not api_key:
+    if not api_key:
         raise EnvironmentError("Thiếu GEMINI_API_KEY")
     spreadsheet = open_spreadsheet()
     prompt, template = read_prompt_config(spreadsheet, prompt_name)
@@ -247,10 +246,6 @@ def run(
         f"Prompt_Name '{prompt_name}'; tab '{DESTINATION_TAB}': "
         f"{len(products)} sản phẩm hợp lệ; xử lý {len(pending)}."
     )
-    if dry_run:
-        for product in pending:
-            print(f"[DRY-RUN] Bài viết!D{product.source_row}/E{product.source_row} -> G{product.source_row} ({product.code})")
-        return
     if not pending:
         print("Hoàn tất: không có Text_Content nào cần tạo.")
         return
@@ -297,13 +292,11 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tạo Text_Content từ Google Sheet")
     parser.add_argument("--prompt-name", required=True, help="Tên trong cột Prompt_Name")
-    parser.add_argument("--dry-run", action="store_true", help="Không gọi AI, không ghi Sheet")
     parser.add_argument("--overwrite", action="store_true", help="Ghi đè content đã có")
     parser.add_argument("--limit", type=int, help="Giới hạn số sản phẩm cần xử lý")
     args = parser.parse_args()
     run(
         prompt_name=args.prompt_name,
-        dry_run=args.dry_run,
         overwrite=args.overwrite,
         limit=args.limit,
     )
