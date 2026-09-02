@@ -22,10 +22,6 @@ from src.sheet_client import get_worksheet, read_website_sales_rows, write_resul
 from src.telegram_client import TelegramDownloader
 
 
-DATASET_ID = "1100143362684092"
-WEBSITE_URL = "https://www.mydu.com.vn/4638n"
-
-
 def required_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -102,7 +98,7 @@ async def run(*, limit: int | None = None) -> None:
                     status="ACTIVE",
                     start_time=row.schedule,
                     promoted_object={
-                        "pixel_id": DATASET_ID,
+                        "pixel_id": row.pixel_id,
                         "custom_event_type": "PURCHASE",
                     },
                     destination_type="WEBSITE",
@@ -116,7 +112,7 @@ async def run(*, limit: int | None = None) -> None:
                     thumbnail_url=thumbnail_url,
                     name=f"Creative - {ad_name}",
                     call_to_action_type="ORDER_NOW",
-                    link=WEBSITE_URL,
+                    link=row.website_url,
                 )
                 ad = create_ad(
                     account,

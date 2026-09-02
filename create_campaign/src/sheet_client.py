@@ -43,6 +43,8 @@ COL_MESSAGE_TEMPLATE = "CHAT_TEMPLATE"
 COL_TELEGRAM_LINK = "Telegram_video_link"
 COL_TEXT_CONTENT = "Text_Content"
 COL_TITLE = "Title"
+COL_WEBSITE_URL = "URL_Ladi"
+COL_PIXEL = "Pixel"
 COL_GENDER = "Gender"
 COL_AGE = "Age"
 COL_RESULT = "RESULT"
@@ -78,6 +80,8 @@ class WebsiteSalesRow:
     telegram_link: str
     text_content: str
     title: str
+    website_url: str
+    pixel_id: str
     schedule: str | None = None
     group_ad_name: str | None = None
     age_min: int | None = None
@@ -337,6 +341,8 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
         COL_TELEGRAM_LINK,
         COL_TEXT_CONTENT,
         COL_TITLE,
+        COL_WEBSITE_URL,
+        COL_PIXEL,
         COL_GENDER,
         COL_AGE,
         COL_RESULT,
@@ -372,6 +378,8 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
                 COL_TELEGRAM_LINK,
                 COL_TEXT_CONTENT,
                 COL_TITLE,
+                COL_WEBSITE_URL,
+                COL_PIXEL,
             ]
             if not raw[name]
         ]
@@ -400,6 +408,8 @@ def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRo
             telegram_link=raw[COL_TELEGRAM_LINK],
             text_content=raw[COL_TEXT_CONTENT],
             title=raw[COL_TITLE],
+            website_url=raw[COL_WEBSITE_URL],
+            pixel_id=raw[COL_PIXEL],
             schedule=schedule,
             age_min=age_min,
             age_max=age_max,
