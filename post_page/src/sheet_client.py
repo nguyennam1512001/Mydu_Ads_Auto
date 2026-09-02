@@ -22,6 +22,7 @@ COL_VIDEO_ID = "FB_UPLOAD_ID"
 COL_POST_ID = "POST_ID"
 COL_POST_LINK = "Post Link"
 COL_STATUS = "POST_STATUS"
+COL_WEBSITE_URL = "URL_Ladi"
 
 REQUIRED_COLUMNS = [
     COL_PAGE_ID,
@@ -48,6 +49,14 @@ class PostRow:
     video_id: str
     post_id: str
     post_link: str
+
+
+@dataclass(frozen=True)
+class WebsiteLinkPostRow:
+    row_number: int
+    page_id: str
+    text_content: str
+    website_url: str
 
 
 class SheetRepository:
@@ -143,6 +152,70 @@ class SheetRepository:
                 video_id=self._cell(row, columns[COL_VIDEO_ID]),
                 post_id=post_id,
                 post_link=post_link,
+            ))
+        return rows
+
+    def pending_website_link_rows(self) -> list[WebsiteLinkPostRow]:
+        """Đọc các dòng chưa đăng để tạo bài link Website công khai."""
+        values = self.worksheet.get_all_values()
+        headers = values[HEADER_ROW - 1] if len(values) >= HEADER_ROW else []
+        self._refresh_headers(headers)
+        required = [
+            COL_PAGE_ID,
+            COL_TEXT_CONTENT,
+            COL_WEBSITE_URL,
+            COL_POST_ID,
+            COL_POST_LINK,
+            COL_STATUS,
+        ]
+        missing_columns = [
+            name for name in required
+            if normalize_header(name) not in self.header_map
+        ]
+        if missing_columns:
+            raise ValueError(
+                f"Sheet thiếu cột bắt buộc: {', '.join(missing_columns)}"
+            )
+
+        columns = {name: self._column(name) for name in required}
+        rows: list[WebsiteLinkPostRow] = []
+        for row_number, row in enumerate(values[HEADER_ROW:], start=HEADER_ROW + 1):
+            page_id = self._cell(row, columns[COL_PAGE_ID])
+            text_content = self._cell(row, columns[COL_TEXT_CONTENT])
+            website_url = self._cell(row, columns[COL_WEBSITE_URL])
+            post_id = self._cell(row, columns[COL_POST_ID])
+            post_link = self._cell(row, columns[COL_POST_LINK])
+
+            if not any([page_id, text_content, website_url]):
+                continue
+            if post_id or post_link:
+                continue
+
+            missing = [
+                name for name, value in [
+                    (COL_PAGE_ID, page_id),
+                    (COL_TEXT_CONTENT, text_content),
+                    (COL_WEBSITE_URL, website_url),
+                ] if not value
+            ]
+            if missing:
+                self.update(
+                    row_number,
+                    **{COL_STATUS: f"Lỗi bài link: thiếu {', '.join(missing)}"},
+                )
+                continue
+            if not website_url.startswith(("https://", "http://")):
+                self.update(
+                    row_number,
+                    **{COL_STATUS: "Lỗi bài link: URL_Ladi phải bắt đầu bằng http:// hoặc https://"},
+                )
+                continue
+
+            rows.append(WebsiteLinkPostRow(
+                row_number=row_number,
+                page_id=page_id,
+                text_content=text_content,
+                website_url=website_url,
             ))
         return rows
 
