@@ -268,7 +268,7 @@ def run_from_sheet() -> None:
     Chạy từ Google Sheet: mỗi dòng dữ liệu (chưa có kết quả ở cột Kết quả) sẽ
     tạo ra 1 Campaign + 1 AdSet + 1 Ad, dùng chung cấu hình mẫu
     SHEET_CAMPAIGN_TEMPLATE (targeting, objective...). Sau khi tạo xong (hoặc
-    lỗi), ghi kết quả ngược lại cột Kết quả (P) của đúng dòng đó.
+    lỗi), ghi kết quả ngược lại cột `RESULT` của đúng dòng đó.
     """
     load_dotenv()
 

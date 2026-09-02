@@ -132,21 +132,21 @@ script có thể đọc trực tiếp từ đó thay vì phải sửa tay file Y
 
 **Cấu trúc cột đang được script đọc** (đúng theo sheet `Auto_Create_Campaign`):
 
-| Cột | Ý nghĩa | Bắt buộc |
+| Header hàng 1 | Ý nghĩa | Bắt buộc |
 |---|---|---|
-| A | ID tài khoản (Ad Account ID) | có |
-| B | ID PAGE | có |
-| H | Tên Campaign | có |
-| I | Ngân sách chiến dịch (VNĐ/ngày, viết `3.000.000 đ` hay `3000000` đều được) | có |
-| O | ID POST (bài viết có sẵn trên Page, dùng làm nội dung quảng cáo) | có |
-| P | Kết quả — **để trống**, script tự ghi `Thành công - ...` hoặc `Lỗi: ...` sau khi chạy | không (script tự điền) |
+| `AD_ACCOUNT_ID` | ID tài khoản quảng cáo | có |
+| `PAGE_ID` | ID Page | có |
+| `CAMPAIGN_NAME` | Tên Campaign | có |
+| `DAILY_BUDGET` | Ngân sách chiến dịch (VNĐ/ngày, viết `3.000.000 đ` hay `3000000` đều được) | có |
+| `POST_ID` | ID bài viết có sẵn trên Page, dùng làm nội dung quảng cáo | có |
+| `RESULT` | Kết quả — **để trống**, script tự ghi `Thành công - ...` hoặc `Lỗi: ...` sau khi chạy | không (script tự điền) |
 
 Mỗi dòng sẽ tạo ra đúng **1 Campaign → 1 AdSet → 1 Ad**, dùng chung 1 cấu hình
 mặc định cho targeting/objective (giống mẫu ở Mục 4, đối tượng Việt Nam 27-55
 tuổi, nữ, tối ưu Tin nhắn Messenger). Muốn đổi cấu hình mặc định này, sửa biến
 `SHEET_CAMPAIGN_TEMPLATE` trong `src/cli.py`.
 
-Dòng nào cột **Kết quả (P)** đã có giá trị sẽ được **bỏ qua** ở lần chạy sau —
+Dòng nào cột `RESULT` đã có giá trị sẽ được **bỏ qua** ở lần chạy sau —
 để tránh tạo trùng campaign khi chạy lại script nhiều lần. Muốn chạy lại 1 dòng,
 xoá nội dung ô Kết quả của dòng đó rồi chạy script lại.
 
@@ -164,7 +164,7 @@ xoá nội dung ô Kết quả của dòng đó rồi chạy script lại.
 ### Bước 2 — Share Google Sheet cho Service Account
 1. Mở Google Sheet của bạn → nút **Share (Chia sẻ)**
 2. Dán email Service Account ở Bước 1 vào → chọn quyền **Editor (Người chỉnh sửa)**
-   (cần quyền ghi vì script phải ghi kết quả vào cột P) → Send/Share
+   (cần quyền ghi vì script phải ghi kết quả vào cột `RESULT`) → Send/Share
 
 ### Bước 3 — Khai báo Secrets trên GitHub
 Repo trên GitHub → **Settings → Secrets and variables → Actions → tab Secrets**

@@ -23,11 +23,11 @@ SCOPES = [
 ]
 DESTINATION_TAB = "Bài viết"
 PROMPT_TAB = "Promt GPT"
-PROMPT_NAME_COLUMN = 1  # A
-PROMPT_COLUMN = 2  # B
-TEMPLATE_COLUMN = 3  # C
-DESTINATION_CODE_COLUMN = 4  # D
-DESTINATION_DESCRIPTION_COLUMN = 5  # E
+PROMPT_NAME_HEADER = "Prompt_Name"
+PROMPT_HEADER = "Prompt"
+TEMPLATE_HEADER = "Content mẫu"
+DESTINATION_CODE_HEADER = "Mã"
+DESTINATION_DESCRIPTION_HEADER = "SP_Description"
 DESTINATION_CONTENT_HEADER = "Text_Content"
 FIRST_DATA_ROW = 2
 
@@ -78,13 +78,17 @@ def open_spreadsheet() -> gspread.Spreadsheet:
 
 
 def read_products(worksheet: gspread.Worksheet) -> list[Product]:
-    """Đọc mã ở cột D và thông tin ở cột E của tab Bài viết."""
+    """Đọc mã và mô tả theo tên header ở hàng 1 của tab Bài viết."""
+    code_column = find_exact_header_column(worksheet, DESTINATION_CODE_HEADER)
+    description_column = find_exact_header_column(
+        worksheet, DESTINATION_DESCRIPTION_HEADER
+    )
     values = worksheet.get_all_values()
     products = []
     for row_number in range(FIRST_DATA_ROW, len(values) + 1):
         row = values[row_number - 1]
-        code = cell(row, DESTINATION_CODE_COLUMN)
-        description = cell(row, DESTINATION_DESCRIPTION_COLUMN)
+        code = cell(row, code_column)
+        description = cell(row, description_column)
         if code and description:
             products.append(Product(row_number, code, description))
     return products
@@ -93,16 +97,19 @@ def read_products(worksheet: gspread.Worksheet) -> list[Product]:
 def read_prompt_config(
     spreadsheet: gspread.Spreadsheet, prompt_name: str
 ) -> tuple[str, str]:
-    """Tìm Prompt_Name ở cột A và trả về Prompt/Content mẫu cùng hàng."""
+    """Tìm Prompt_Name và cấu hình theo tên header ở hàng 1."""
     worksheet = spreadsheet.worksheet(PROMPT_TAB)
+    prompt_name_column = find_exact_header_column(worksheet, PROMPT_NAME_HEADER)
+    prompt_column = find_exact_header_column(worksheet, PROMPT_HEADER)
+    template_column = find_exact_header_column(worksheet, TEMPLATE_HEADER)
     values = worksheet.get_all_values()
     wanted = prompt_name.strip().casefold()
     for row_number, row in enumerate(values[1:], start=2):
-        name = cell(row, PROMPT_NAME_COLUMN)
+        name = cell(row, prompt_name_column)
         if name.casefold() != wanted:
             continue
-        prompt = cell(row, PROMPT_COLUMN)
-        template = cell(row, TEMPLATE_COLUMN)
+        prompt = cell(row, prompt_column)
+        template = cell(row, template_column)
         if not prompt:
             raise ValueError(f"Prompt của '{prompt_name}' tại hàng {row_number} đang trống")
         if not template:

@@ -64,10 +64,10 @@ Tài khoản Telegram tạo session phải đang tham gia channel chứa video.
 ## Tự động tạo Text_Content
 
 Khi chạy workflow **Tạo Text Content từ Google Sheet**, chọn `Prompt_Name`.
-Công cụ tìm tên đó ở cột A của tab `Promt GPT`, lấy Prompt ở cột B và Content
-mẫu ở cột C trên đúng cùng hàng. Công cụ đọc trực tiếp từng sản phẩm trong tab
-`Bài viết`: mã ở cột D và thông tin sản phẩm ở cột E, rồi viết bài quảng cáo mới
-vào cột có header chính xác `Text_Content` ở hàng 1, trên đúng cùng hàng.
+Công cụ tìm tên đó trong tab `Promt GPT` theo các header hàng 1
+`Prompt_Name`, `Prompt` và `Content mẫu`. Trong tab `Bài viết`, công cụ đọc
+trực tiếp từng sản phẩm theo header `Mã` và `SP_Description`, rồi viết bài quảng
+cáo mới vào cột có header chính xác `Text_Content` trên đúng cùng hàng.
 
 Mặc định công cụ bỏ qua dòng đã có `Text_Content`. Trong **Actions → Tạo Text
 Content từ Google Sheet → Run workflow**:
