@@ -11,16 +11,11 @@ Vào tab **Actions** và chọn workflow cần chạy:
 
 1. `Tạo Text Content`
 2. `Đăng Facebook Page`
-2.1. `Đăng bài link Website`
 3. `Tạo Campaign`
 4. `Tạo Text Content -> Đăng Facebook Page`
 5. `Đăng Facebook Page -> Tạo Campaign`
 6. `Chạy toàn bộ`
 7. `Tạo Campaign Doanh số Website`
-
-Workflow `2.1` đọc `PAGE_ID`, `Text_Content` và `URL_Ladi` từ tab `Bài viết`,
-đăng một bài link công khai rồi ghi `POST_ID`, `Post Link` và `POST_STATUS`.
-Các dòng đã có `POST_ID` hoặc `Post Link` sẽ được bỏ qua.
 
 Các chế độ ghép chạy tuần tự. Bước sau chỉ chạy khi bước trước hoàn tất thành công:
 
@@ -37,7 +32,6 @@ Mydu_Ads_Auto/
 └── .github/
     └── workflows/
         ├── 01-text-content.yml
-        ├── 02-1-publish-website-link.yml
         ├── ...
         └── 07-website-sales.yml
 ```
