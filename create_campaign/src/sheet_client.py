@@ -40,6 +40,9 @@ COL_GROUP_AD_NAME = "Mã"
 COL_DAILY_BUDGET = "DAILY_BUDGET"
 COL_POST_ID = "POST_ID"
 COL_MESSAGE_TEMPLATE = "CHAT_TEMPLATE"
+COL_TELEGRAM_LINK = "Telegram_video_link"
+COL_TEXT_CONTENT = "Text_Content"
+COL_TITLE = "Title"
 COL_GENDER = "Gender"
 COL_AGE = "Age"
 COL_RESULT = "RESULT"
@@ -60,6 +63,23 @@ class SheetRow:
     schedule: str | None = None
     group_ad_name: str | None = None 
     message_template_name: str | None = None
+    age_min: int | None = None
+    age_max: int | None = None
+    genders: list[int] | None = None
+
+
+@dataclass
+class WebsiteSalesRow:
+    row_number: int
+    ad_account_id: str
+    page_id: str
+    campaign_name: str
+    daily_budget: int
+    telegram_link: str
+    text_content: str
+    title: str
+    schedule: str | None = None
+    group_ad_name: str | None = None
     age_min: int | None = None
     age_max: int | None = None
     genders: list[int] | None = None
@@ -296,6 +316,95 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
             )
         )
 
+    return rows
+
+
+def read_website_sales_rows(worksheet: gspread.Worksheet) -> list[WebsiteSalesRow]:
+    """Đọc các dòng dùng để tạo quảng cáo video chuyển đổi Website."""
+    values = worksheet.get_all_values()
+    if not values:
+        return []
+
+    header_map = _build_header_map(values[HEADER_ROW - 1])
+    required_columns = [
+        COL_AD_ACCOUNT_ID,
+        COL_PAGE_ID,
+        COL_CAMPAIGN_NAME,
+        COL_GROUP_AD_NAME,
+        COL_DAILY_BUDGET,
+        COL_SCHEDULE_DATE,
+        COL_SCHEDULE_TIME,
+        COL_TELEGRAM_LINK,
+        COL_TEXT_CONTENT,
+        COL_TITLE,
+        COL_GENDER,
+        COL_AGE,
+        COL_RESULT,
+    ]
+    columns = {name: _col_to_index(header_map, name) for name in required_columns}
+    _RESULT_COLUMN_CACHE[id(worksheet)] = columns[COL_RESULT] + 1
+
+    def cell(row: list[str], name: str) -> str:
+        index = columns[name]
+        return row[index].strip() if index < len(row) else ""
+
+    rows: list[WebsiteSalesRow] = []
+    for row_number, row in enumerate(values[HEADER_ROW:], start=FIRST_DATA_ROW):
+        raw = {name: cell(row, name) for name in required_columns}
+        if not any([
+            raw[COL_AD_ACCOUNT_ID],
+            raw[COL_PAGE_ID],
+            raw[COL_CAMPAIGN_NAME],
+            raw[COL_DAILY_BUDGET],
+            raw[COL_TELEGRAM_LINK],
+            raw[COL_TEXT_CONTENT],
+        ]):
+            continue
+        if raw[COL_RESULT]:
+            continue
+
+        missing = [
+            name for name in [
+                COL_AD_ACCOUNT_ID,
+                COL_PAGE_ID,
+                COL_CAMPAIGN_NAME,
+                COL_DAILY_BUDGET,
+                COL_TELEGRAM_LINK,
+                COL_TEXT_CONTENT,
+                COL_TITLE,
+            ]
+            if not raw[name]
+        ]
+        if missing:
+            write_result(worksheet, row_number, f"Lỗi: thiếu {', '.join(missing)}")
+            continue
+
+        try:
+            daily_budget = _parse_budget(raw[COL_DAILY_BUDGET])
+            schedule = _parse_schedule(
+                raw[COL_SCHEDULE_DATE], raw[COL_SCHEDULE_TIME]
+            )
+            age_min, age_max = _parse_age(raw[COL_AGE])
+            genders = _parse_gender(raw[COL_GENDER])
+        except ValueError as exc:
+            write_result(worksheet, row_number, f"Lỗi: {exc}")
+            continue
+
+        rows.append(WebsiteSalesRow(
+            row_number=row_number,
+            ad_account_id=raw[COL_AD_ACCOUNT_ID],
+            page_id=raw[COL_PAGE_ID],
+            campaign_name=raw[COL_CAMPAIGN_NAME],
+            group_ad_name=raw[COL_GROUP_AD_NAME] or None,
+            daily_budget=daily_budget,
+            telegram_link=raw[COL_TELEGRAM_LINK],
+            text_content=raw[COL_TEXT_CONTENT],
+            title=raw[COL_TITLE],
+            schedule=schedule,
+            age_min=age_min,
+            age_max=age_max,
+            genders=genders,
+        ))
     return rows
 
 

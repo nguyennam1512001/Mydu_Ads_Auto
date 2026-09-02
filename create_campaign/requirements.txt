@@ -3,3 +3,4 @@ python-dotenv>=1.0.0
 PyYAML>=6.0
 gspread>=6.0.0
 google-auth>=2.30.0
+Telethon>=1.40,<2

@@ -5,6 +5,8 @@ Hỗ trợ 2 cách:
      "Sử dụng bài viết hiện có" trên Ads Manager.
   2. Tạo creative mới từ ảnh + nội dung tự viết.
 """
+import time
+
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.adcreative import AdCreative
 from facebook_business.adobjects.adimage import AdImage
@@ -25,6 +27,32 @@ def upload_video(account: AdAccount, video_path: str) -> str:
     video[AdVideo.Field.filename] = video_path
     video.remote_create()
     return video.get_id()
+
+
+def wait_for_video_thumbnail(video_id: str, timeout_seconds: int = 600) -> str:
+    """Chờ Meta xử lý video và trả về URL thumbnail dùng cho creative."""
+    video = AdVideo(video_id)
+    deadline = time.monotonic() + timeout_seconds
+    last_status = ""
+    while time.monotonic() < deadline:
+        payload = video.api_get(fields=["status"])
+        status = payload.get("status") or {}
+        last_status = str(status)
+        if isinstance(status, dict) and status.get("video_status") == "error":
+            raise RuntimeError(f"Meta xử lý video quảng cáo thất bại: {status}")
+        items = video.get_thumbnails(fields=["uri", "is_preferred"])
+        if items:
+            preferred = next(
+                (item for item in items if item.get("is_preferred")), items[0]
+            )
+            url = preferred.get("uri")
+            if url:
+                return str(url)
+        time.sleep(5)
+    raise TimeoutError(
+        "Hết thời gian chờ Meta tạo thumbnail cho video. "
+        f"Trạng thái cuối: {last_status}"
+    )
 
 
 def create_creative_from_existing_post(
@@ -93,6 +121,7 @@ def create_creative_from_video(
     call_to_action_type: str = "SHOP_NOW",
     link: str = "",
     cta_value: dict | None = None,
+    title: str = "",
 ) -> AdCreative:
     """
     Tạo creative mới dạng video (dùng cho các mẫu '-VIDEO-AI' như trong tài khoản).
@@ -108,6 +137,7 @@ def create_creative_from_video(
     video_data = {
         "video_id": video_id,
         "message": message,
+        "title": title,
         "image_url": thumbnail_url,
         "call_to_action": {
             "type": call_to_action_type,

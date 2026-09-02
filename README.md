@@ -7,7 +7,7 @@ Repository hợp nhất 2 dự án:
 
 ## 🚀 Chạy hệ thống
 
-Vào **Actions → 🚀 Chạy hệ thống → Run workflow** và chọn một trong các chế độ:
+Vào tab **Actions** và chọn workflow cần chạy:
 
 1. `Tạo Text Content`
 2. `Đăng Facebook Page`
@@ -15,6 +15,7 @@ Vào **Actions → 🚀 Chạy hệ thống → Run workflow** và chọn một 
 4. `Tạo Text Content -> Đăng Facebook Page`
 5. `Đăng Facebook Page -> Tạo Campaign`
 6. `Chạy toàn bộ`
+7. `Tạo Campaign Doanh số Website`
 
 Các chế độ ghép chạy tuần tự. Bước sau chỉ chạy khi bước trước hoàn tất thành công:
 
@@ -30,7 +31,9 @@ Mydu_Ads_Auto/
 ├── create_campaign/           # Auto_Create_Campain
 └── .github/
     └── workflows/
-        └── system.yml         # Workflow điều phối
+        ├── 01-text-content.yml
+        ├── ...
+        └── 07-website-sales.yml
 ```
 
 ## GitHub Secrets cần cấu hình
