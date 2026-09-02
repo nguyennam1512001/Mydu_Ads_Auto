@@ -67,7 +67,7 @@ Khi chạy workflow **Tạo Text Content từ Google Sheet**, chọn `Prompt_Nam
 Công cụ tìm tên đó ở cột A của tab `Promt GPT`, lấy Prompt ở cột B và Content
 mẫu ở cột C trên đúng cùng hàng. Công cụ đọc trực tiếp từng sản phẩm trong tab
 `Bài viết`: mã ở cột D và thông tin sản phẩm ở cột E, rồi viết bài quảng cáo mới
-vào cột G cùng hàng.
+vào cột có header chính xác `Text_Content` ở hàng 1, trên đúng cùng hàng.
 
 Mặc định công cụ bỏ qua dòng đã có `Text_Content`. Trong **Actions → Tạo Text
 Content từ Google Sheet → Run workflow**:

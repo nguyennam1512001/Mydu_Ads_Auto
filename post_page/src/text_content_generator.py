@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import gspread
+from gspread.utils import rowcol_to_a1
 from google import genai
 from google.oauth2.service_account import Credentials
 from google.genai import errors, types
@@ -27,7 +28,7 @@ PROMPT_COLUMN = 2  # B
 TEMPLATE_COLUMN = 3  # C
 DESTINATION_CODE_COLUMN = 4  # D
 DESTINATION_DESCRIPTION_COLUMN = 5  # E
-DESTINATION_CONTENT_COLUMN = 7  # G
+DESTINATION_CONTENT_HEADER = "Text_Content"
 FIRST_DATA_ROW = 2
 
 
@@ -41,6 +42,22 @@ class Product:
 def cell(row: list[str], one_based_column: int) -> str:
     index = one_based_column - 1
     return row[index].strip() if index < len(row) else ""
+
+
+def find_exact_header_column(worksheet: gspread.Worksheet, header: str) -> int:
+    """Trả về số cột 1-based có header khớp chính xác ở hàng đầu tiên."""
+    headers = worksheet.row_values(1)
+    matches = [index for index, value in enumerate(headers, start=1) if value == header]
+    if not matches:
+        raise ValueError(
+            f"Không tìm thấy header chính xác '{header}' ở hàng 1 "
+            f"của tab '{worksheet.title}'"
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Header '{header}' bị trùng ở hàng 1 của tab '{worksheet.title}'"
+        )
+    return matches[0]
 
 
 def open_spreadsheet() -> gspread.Spreadsheet:
@@ -232,8 +249,9 @@ def run(
     spreadsheet = open_spreadsheet()
     prompt, template = read_prompt_config(spreadsheet, prompt_name)
     destination = spreadsheet.worksheet(DESTINATION_TAB)
+    content_column = find_exact_header_column(destination, DESTINATION_CONTENT_HEADER)
     products = read_products(destination)
-    contents = destination.col_values(DESTINATION_CONTENT_COLUMN)
+    contents = destination.col_values(content_column)
     pending = []
     for product in products:
         old_content = contents[product.source_row - 1].strip() if product.source_row <= len(contents) else ""
@@ -277,7 +295,7 @@ def run(
                 generated[product.source_row] = future.result()
     updates = [
         {
-            "range": f"G{product.source_row}",
+            "range": rowcol_to_a1(product.source_row, content_column),
             "values": [[generated[product.source_row]]],
         }
         for product in pending
