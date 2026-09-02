@@ -1,0 +1,19 @@
+templates:
+  "MDU Shop":
+    - message:
+        text: "Cảm ơn chị đã nhắn tin tới MDU Shop - Thời trang thiết kế cao cấp MDU chính hãng!"
+        quick_replies:
+          - content_type: text
+            title: "Báo giá váy cho chị !"
+            payload: "XEM_BANG_GIA"
+
+  "MDU Vietnam":
+    - message:
+        text: "MDU Vietnam xin chào! Váy, Đầm thiết kế cao cấp MDU đủ size S, M, L, XL, XXL !"
+        quick_replies:
+          - content_type: text
+            title: "Báo giá chị giá váy này nhé !"
+            payload: "XEM_BANG_GIA"
+          - content_type: text
+            title: "Tư vấn size cho chị!"
+            payload: "TU_VAN_SIZE"

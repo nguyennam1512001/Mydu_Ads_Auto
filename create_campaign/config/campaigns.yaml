@@ -1,0 +1,33 @@
+campaigns:
+  - name: "Adela Shop-Adela Shop-MDU6507-Nam-26_8-VIDEO-AI"
+    objective: "OUTCOME_ENGAGEMENT"      # giữ nguyên - Mục tiêu: Lượt tương tác
+    special_ad_categories: []
+    daily_budget: 300000   
+    status: "PAUSED"
+
+    adsets:
+      - name: "AdSet - MDU6507"
+        billing_event: "IMPRESSIONS"
+        optimization_goal: "CONVERSATIONS"    # <-- tối đa hóa cuộc trò truyện
+        destination_type: "MESSENGER"         # <-- Vị trí chuyển đổi Đích đến của tin nhắn
+        promoted_object:                    
+          page_id: "1294066237122353"
+        status: "ACTIVE"
+        targeting:
+          geo_locations:
+            countries: ["VN"]
+          age_min: 27
+          age_max: 55
+          genders: [2] 
+          publisher_platforms: ["facebook", "messenger"]    # Chỉ chạy trên Facebook + Messenger
+          device_platforms: ["mobile"]                      # Chỉ nhắm thiết bị di động 
+          wifi_only: false                                  # KHÔNG giới hạn chỉ khi có Wi-Fi
+
+
+        ads:
+          - name: "Ad - MDU6507"
+            page_id: "1294066237122353"
+            existing_post_id: "122093020893469554"
+            #call_to_action: "MESSAGE_PAGE"     # Nút kêu gọi hành động
+            #destination: "messenger"           
+            status: "ACTIVE"

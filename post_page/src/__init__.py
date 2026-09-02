@@ -1,0 +1,2 @@
+"""Auto Post Page package."""
+
