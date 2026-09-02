@@ -16,6 +16,12 @@ class PublishedPost:
     permalink_url: str
 
 
+@dataclass(frozen=True)
+class PublishedLinkPost:
+    post_id: str
+    permalink_url: str
+
+
 class FacebookPagePublisher:
     def __init__(self, access_token: str, graph_version: str = "v25.0") -> None:
         self.access_token = access_token
@@ -50,6 +56,48 @@ class FacebookPagePublisher:
         page_token = payload.get("access_token") or self.access_token
         self._page_tokens[page_id] = page_token
         return page_token
+
+    def publish_website_link_post(
+        self,
+        page_id: str,
+        message: str,
+        website_url: str,
+    ) -> PublishedLinkPost:
+        """Đăng bài link Website công khai và trả về Page post ID."""
+        page_token = self._page_token(page_id)
+        response = self.http.post(
+            f"{self.base_url}/{page_id}/feed",
+            data={
+                "message": message,
+                "link": website_url,
+                "published": "true",
+                "access_token": page_token,
+            },
+            timeout=120,
+        )
+        payload = self._raise_for_graph(response)
+        object_story_id = str(payload.get("id") or "")
+        if not object_story_id:
+            raise RuntimeError("Meta không trả về ID bài viết link")
+
+        detail_response = self.http.get(
+            f"{self.base_url}/{object_story_id}",
+            params={
+                "fields": "id,permalink_url,is_published",
+                "access_token": page_token,
+            },
+            timeout=60,
+        )
+        detail = self._raise_for_graph(detail_response)
+        if detail.get("is_published") is False:
+            raise RuntimeError("Meta đã tạo bài link nhưng bài chưa công khai")
+        permalink = str(detail.get("permalink_url") or "")
+        if permalink.startswith("/"):
+            permalink = f"https://www.facebook.com{permalink}"
+        if not permalink:
+            permalink = f"https://www.facebook.com/{object_story_id}"
+        post_id = object_story_id.rsplit("_", 1)[-1]
+        return PublishedLinkPost(post_id=post_id, permalink_url=permalink)
 
     def upload_video(
         self,
