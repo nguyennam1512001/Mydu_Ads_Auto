@@ -106,29 +106,32 @@ jobs:
           # Settings: publishing always requires the real credentials.
           path = "post_page/src/settings.py"
           text = read(path)
-          old = '''    def from_env(cls, *, dry_run: bool = False) -> "Settings":
-              required = ["GOOGLE_SHEET_ID", "GOOGLE_CREDENTIALS"]
-              if not dry_run:
-                  required += [
-                      "FB_ACCESS_TOKEN",
-                      "TELEGRAM_API_ID",
-                      "TELEGRAM_API_HASH",
-                      "TELEGRAM_SESSION",
-                  ]
-          '''
-          new = '''    def from_env(cls) -> "Settings":
-              required = [
-                  "GOOGLE_SHEET_ID",
-                  "GOOGLE_CREDENTIALS",
-                  "FB_ACCESS_TOKEN",
-                  "TELEGRAM_API_ID",
-                  "TELEGRAM_API_HASH",
-                  "TELEGRAM_SESSION",
-              ]
-          '''
-          if old not in text:
-              raise RuntimeError(f"Không tìm thấy logic dry-run trong {path}")
-          write(path, text.replace(old, new, 1))
+          pattern = (
+              r'    def from_env\(cls, \*, dry_run: bool = False\) -> "Settings":\n'
+              r'        required = \["GOOGLE_SHEET_ID", "GOOGLE_CREDENTIALS"\]\n'
+              r'        if not dry_run:\n'
+              r'            required \+= \[\n'
+              r'                "FB_ACCESS_TOKEN",\n'
+              r'                "TELEGRAM_API_ID",\n'
+              r'                "TELEGRAM_API_HASH",\n'
+              r'                "TELEGRAM_SESSION",\n'
+              r'            \]\n'
+          )
+          replacement = (
+              '    def from_env(cls) -> "Settings":\n'
+              '        required = [\n'
+              '            "GOOGLE_SHEET_ID",\n'
+              '            "GOOGLE_CREDENTIALS",\n'
+              '            "FB_ACCESS_TOKEN",\n'
+              '            "TELEGRAM_API_ID",\n'
+              '            "TELEGRAM_API_HASH",\n'
+              '            "TELEGRAM_SESSION",\n'
+              '        ]\n'
+          )
+          text, count = re.subn(pattern, replacement, text)
+          if count != 1:
+              raise RuntimeError(f"Không sửa được logic dry-run trong {path}: count={count}")
+          write(path, text)
 
           # Documentation: remove instructions for dry-run.
           path = "post_page/README.md"
