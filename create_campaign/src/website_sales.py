@@ -27,6 +27,15 @@ from src.sheet_client import (
 from src.telegram_client import TelegramDownloader
 
 
+def numbered_name(base: str, label: str, index: int, total: int) -> str:
+    return base if total == 1 else f"{base} - {label}{index}"
+
+
+def ads_per_adset(adset_count: int, ad_count: int) -> list[int]:
+    base, remainder = divmod(ad_count, adset_count)
+    return [base + (1 if index < remainder else 0) for index in range(adset_count)]
+
+
 def required_env(name: str) -> str:
     value = os.getenv(name)
     if not value:
@@ -73,16 +82,6 @@ async def run(*, limit: int | None = None) -> None:
                     video_id = upload_video(account, str(video_path))
                     thumbnail_url = wait_for_video_thumbnail(video_id)
 
-                campaign = create_campaign(
-                    account,
-                    name=row.campaign_name,
-                    objective="OUTCOME_SALES",
-                    status="PAUSED",
-                    daily_budget=row.daily_budget,
-                    bid_strategy="LOWEST_COST_WITHOUT_CAP",
-                    special_ad_categories=[],
-                )
-                campaign_id = campaign["id"]
                 targeting = {
                     "geo_locations": {"countries": ["VN"]},
                     "publisher_platforms": ["facebook", "messenger"],
@@ -94,43 +93,84 @@ async def run(*, limit: int | None = None) -> None:
                 if row.genders is not None:
                     targeting["genders"] = row.genders
 
-                ad_name = row.group_ad_name or row.campaign_name
-                adset = create_adset(
-                    account,
-                    name=f"AdSet - {ad_name}",
-                    campaign_id=campaign_id,
-                    billing_event="IMPRESSIONS",
-                    optimization_goal="OFFSITE_CONVERSIONS",
-                    targeting=targeting,
-                    status="ACTIVE",
-                    start_time=row.schedule,
-                    promoted_object={
-                        "pixel_id": row.pixel_id,
-                        "custom_event_type": "PURCHASE",
-                    },
-                    destination_type="WEBSITE",
-                )
-                creative = create_creative_from_video(
-                    account,
-                    page_id=row.page_id,
-                    message=row.text_content,
-                    title=row.title,
-                    video_id=video_id,
-                    thumbnail_url=thumbnail_url,
-                    name=f"Creative - {ad_name}",
-                    call_to_action_type="ORDER_NOW",
-                    link=row.website_url,
-                )
-                ad = create_ad(
-                    account,
-                    name=f"Ad - {ad_name}",
-                    adset_id=adset["id"],
-                    creative_id=creative["id"],
-                    status="ACTIVE",
-                )
+                base_name = row.group_ad_name or row.campaign_name
+                distribution = ads_per_adset(row.adset_count, row.ad_count)
+                campaign_ids: list[str] = []
+                adset_ids: list[str] = []
+                ad_ids: list[str] = []
+                for campaign_index in range(1, row.campaign_count + 1):
+                    campaign = create_campaign(
+                        account,
+                        name=numbered_name(
+                            row.campaign_name,
+                            "C",
+                            campaign_index,
+                            row.campaign_count,
+                        ),
+                        objective="OUTCOME_SALES",
+                        status="PAUSED",
+                        daily_budget=row.daily_budget,
+                        bid_strategy="LOWEST_COST_WITHOUT_CAP",
+                        special_ad_categories=[],
+                    )
+                    campaign_id = campaign["id"]
+                    campaign_ids.append(campaign_id)
+                    ads_before = 0
+                    for adset_index, ads_in_adset in enumerate(distribution, start=1):
+                        adset = create_adset(
+                            account,
+                            name=numbered_name(
+                                f"AdSet - {base_name}",
+                                "AS",
+                                adset_index,
+                                row.adset_count,
+                            ),
+                            campaign_id=campaign_id,
+                            billing_event="IMPRESSIONS",
+                            optimization_goal="OFFSITE_CONVERSIONS",
+                            targeting=targeting,
+                            status="ACTIVE",
+                            start_time=row.schedule,
+                            promoted_object={
+                                "pixel_id": row.pixel_id,
+                                "custom_event_type": "PURCHASE",
+                            },
+                            destination_type="WEBSITE",
+                        )
+                        adset_ids.append(adset["id"])
+                        for ad_index in range(1, ads_in_adset + 1):
+                            global_ad_index = ads_before + ad_index
+                            ad_name = numbered_name(
+                                f"Ad - {base_name}",
+                                "AD",
+                                global_ad_index,
+                                row.ad_count,
+                            )
+                            creative = create_creative_from_video(
+                                account,
+                                page_id=row.page_id,
+                                message=row.text_content,
+                                title=row.title,
+                                video_id=video_id,
+                                thumbnail_url=thumbnail_url,
+                                name=f"Creative - {ad_name}",
+                                call_to_action_type="ORDER_NOW",
+                                link=row.website_url,
+                            )
+                            ad = create_ad(
+                                account,
+                                name=ad_name,
+                                adset_id=adset["id"],
+                                creative_id=creative["id"],
+                                status="ACTIVE",
+                            )
+                            ad_ids.append(ad["id"])
+                        ads_before += ads_in_adset
                 message = (
-                    f"Thành công Website - Campaign: {campaign_id}, "
-                    f"AdSet: {adset['id']}, Ad: {ad['id']}"
+                    f"Thành công Website {row.campaign_count}-"
+                    f"{row.adset_count}-{row.ad_count} - Campaign: "
+                    f"{', '.join(campaign_ids)}, AdSet: {len(adset_ids)}, "
+                    f"Ad: {len(ad_ids)}"
                 )
                 write_result(worksheet, row.row_number, message)
                 print(f"Dòng {row.row_number}: {message}")
