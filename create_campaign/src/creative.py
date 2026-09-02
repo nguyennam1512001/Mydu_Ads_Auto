@@ -24,7 +24,7 @@ def upload_image(account: AdAccount, image_path: str) -> str:
 def upload_video(account: AdAccount, video_path: str) -> str:
     """Upload video lên thư viện quảng cáo, trả về video_id."""
     video = AdVideo(parent_id=account.get_id())
-    video[AdVideo.Field.filename] = video_path
+    video[AdVideo.Field.filepath] = video_path
     video.remote_create()
     return video.get_id()
 
