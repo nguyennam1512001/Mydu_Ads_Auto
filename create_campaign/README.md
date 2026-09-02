@@ -139,11 +139,14 @@ script có thể đọc trực tiếp từ đó thay vì phải sửa tay file Y
 | `CAMPAIGN_NAME` | Tên Campaign | có |
 | `DAILY_BUDGET` | Ngân sách chiến dịch (VNĐ/ngày, viết `3.000.000 đ` hay `3000000` đều được) | có |
 | `POST_ID` | ID bài viết có sẵn trên Page, dùng làm nội dung quảng cáo | có |
+| `Camp_Structure` | Cấu trúc `C-A-D`: số Campaign, số AdSet và tổng số Ad trong mỗi Campaign; để trống = `1-1-1` | không |
 | `RESULT` | Kết quả — **để trống**, script tự ghi `Thành công - ...` hoặc `Lỗi: ...` sau khi chạy | không (script tự điền) |
 
-Mỗi dòng sẽ tạo ra đúng **1 Campaign → 1 AdSet → 1 Ad**, dùng chung 1 cấu hình
-mặc định cho targeting/objective (giống mẫu ở Mục 4, đối tượng Việt Nam 27-55
-tuổi, nữ, tối ưu Tin nhắn Messenger). Muốn đổi cấu hình mặc định này, sửa biến
+Mỗi dòng tạo cấu trúc theo `Camp_Structure`, dùng chung cấu hình mặc định cho
+targeting/objective. Ví dụ `1-2-2` tạo 1 Campaign, 2 AdSet và tổng 2 Ad
+(mỗi AdSet 1 Ad); `1-1-3` tạo 1 Campaign, 1 AdSet và 3 Ad. Nếu tổng Ad không
+chia đều, Ad được phân bổ lần lượt: `1-2-3` tạo 2 Ad ở nhóm đầu và 1 Ad ở nhóm
+sau. Tổng Ad phải lớn hơn hoặc bằng số AdSet. Muốn đổi cấu hình mặc định, sửa
 `SHEET_CAMPAIGN_TEMPLATE` trong `src/cli.py`.
 
 Dòng nào cột `RESULT` đã có giá trị sẽ được **bỏ qua** ở lần chạy sau —
@@ -184,7 +187,7 @@ dẫn file, vì Secrets chỉ lưu được text.
 Vào tab **Actions** trên GitHub → chọn workflow tạo Campaign → **Run workflow**.
 Workflow đọc các Secrets đã cấu hình và chạy `python run.py --from-sheet`.
 
-Workflow **7️⃣ Tạo Campaign Doanh số Website** đọc cấu hình, `URL_Ladi` và
+Workflow **7️⃣ Tạo Campaign Doanh số Website** đọc cấu hình, `Camp_Structure`, `URL_Ladi` và
 `Pixel` từ tab `Lên Camp`; không sử dụng `POST_ID` hoặc `CHAT_TEMPLATE`. Workflow
 dùng `Mã` để lấy `Telegram_video_link`, `Text_Content` và `Title` của cùng sản
 phẩm từ tab `Bài viết`, tải video từ Telegram, tối ưu sự kiện `PURCHASE` và dùng
