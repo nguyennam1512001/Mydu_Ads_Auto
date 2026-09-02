@@ -1,0 +1,162 @@
+name: Cleanup dry-run mode
+
+on:
+  push:
+    paths:
+      - ".github/workflows/cleanup-dry-run.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Remove dry-run code and documentation
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def read(path):
+              return Path(path).read_text(encoding="utf-8")
+
+          def write(path, text):
+              Path(path).write_text(text, encoding="utf-8")
+
+          # GitHub Actions: remove dry_run input and --dry-run argument.
+          for path in [
+              ".github/workflows/01-text-content.yml",
+              ".github/workflows/04-text-then-publish.yml",
+              ".github/workflows/06-run-all.yml",
+          ]:
+              text = read(path)
+              text, n1 = re.subn(
+                  r'      dry_run:\n        description: ".*?"\n        required: false\n        default: true\n        type: boolean\n',
+                  "",
+                  text,
+              )
+              text, n2 = re.subn(
+                  r'^          if \[\[ "\$\{\{ inputs\.dry_run \}\}" == "true" \]\]; then args\+=\(--dry-run\); fi\n',
+                  "",
+                  text,
+                  flags=re.MULTILINE,
+              )
+              if n1 != 1 or n2 != 1:
+                  raise RuntimeError(f"Không sửa được dry-run trong {path}: input={n1}, arg={n2}")
+              write(path, text)
+
+          # Text Content generator: always run for real.
+          path = "post_page/src/text_content_generator.py"
+          text = read(path)
+          replacements = [
+              ("    dry_run: bool = False,\n", ""),
+              ("    if not dry_run and not api_key:\n", "    if not api_key:\n"),
+              (
+                  "    if dry_run:\n"
+                  "        for product in pending:\n"
+                  "            print(f\"[DRY-RUN] Bài viết!D{product.source_row}/E{product.source_row} -> G{product.source_row} ({product.code})\")\n"
+                  "        return\n",
+                  "",
+              ),
+              ("    parser.add_argument(\"--dry-run\", action=\"store_true\", help=\"Không gọi AI, không ghi Sheet\")\n", ""),
+              ("        dry_run=args.dry_run,\n", ""),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise RuntimeError(f"Không tìm thấy đoạn cần xoá trong {path}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+          write(path, text)
+
+          # Facebook Page CLI: remove its hidden dry-run command-line mode too.
+          path = "post_page/src/cli.py"
+          text = read(path)
+          replacements = [
+              ("from src.telegram_client import TelegramDownloader, parse_message_link\n", "from src.telegram_client import TelegramDownloader\n"),
+              ("async def run(*, dry_run: bool = False, limit: int | None = None) -> None:\n", "async def run(*, limit: int | None = None) -> None:\n"),
+              ("    settings = Settings.from_env(dry_run=dry_run)\n", "    settings = Settings.from_env()\n"),
+              (
+                  "    if dry_run:\n"
+                  "        for row in rows:\n"
+                  "            if row.post_link:\n"
+                  "                print(\n"
+                  "                    f\"[DRY-RUN] Dòng {row.row_number}: lấy POST_ID từ \"\n"
+                  "                    f\"{row.post_link}\"\n"
+                  "                )\n"
+                  "                continue\n"
+                  "            ref = parse_message_link(row.telegram_link)\n"
+                  "            print(\n"
+                  "                f\"[DRY-RUN] Dòng {row.row_number}: Page {row.page_id}, \"\n"
+                  "                f\"Telegram entity={ref.entity}, message={ref.message_id}\"\n"
+                  "            )\n"
+                  "        return\n\n",
+                  "",
+              ),
+              ("    parser.add_argument(\"--dry-run\", action=\"store_true\", help=\"Chỉ kiểm tra dữ liệu\")\n", ""),
+              ("    asyncio.run(run(dry_run=args.dry_run, limit=args.limit))\n", "    asyncio.run(run(limit=args.limit))\n"),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise RuntimeError(f"Không tìm thấy đoạn cần xoá trong {path}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+          write(path, text)
+
+          # Settings: publishing always requires the real credentials.
+          path = "post_page/src/settings.py"
+          text = read(path)
+          old = '''    def from_env(cls, *, dry_run: bool = False) -> "Settings":
+              required = ["GOOGLE_SHEET_ID", "GOOGLE_CREDENTIALS"]
+              if not dry_run:
+                  required += [
+                      "FB_ACCESS_TOKEN",
+                      "TELEGRAM_API_ID",
+                      "TELEGRAM_API_HASH",
+                      "TELEGRAM_SESSION",
+                  ]
+          '''
+          new = '''    def from_env(cls) -> "Settings":
+              required = [
+                  "GOOGLE_SHEET_ID",
+                  "GOOGLE_CREDENTIALS",
+                  "FB_ACCESS_TOKEN",
+                  "TELEGRAM_API_ID",
+                  "TELEGRAM_API_HASH",
+                  "TELEGRAM_SESSION",
+              ]
+          '''
+          if old not in text:
+              raise RuntimeError(f"Không tìm thấy logic dry-run trong {path}")
+          write(path, text.replace(old, new, 1))
+
+          # Documentation: remove instructions for dry-run.
+          path = "post_page/README.md"
+          text = read(path)
+          for line in [
+              "- Giữ `dry_run` bật để xem trước danh sách sẽ xử lý mà không gọi AI.\n",
+              "- Tắt `dry_run` để chạy thật.\n",
+          ]:
+              if line not in text:
+                  raise RuntimeError(f"Không tìm thấy dòng dry-run trong {path}: {line!r}")
+              text = text.replace(line, "", 1)
+          write(path, text)
+
+      - name: Remove temporary cleanup workflow and verify repository is clean
+        shell: bash
+        run: |
+          rm .github/workflows/cleanup-dry-run.yml
+          if grep -RniE 'dry_run|dry-run|DRY-RUN|Chạy thử|chạy thử|không gọi AI và không ghi Sheet|Chỉ kiểm tra dữ liệu' \
+              --exclude-dir=.git .; then
+            echo "Vẫn còn nội dung liên quan chế độ chạy thử."
+            exit 1
+          fi
+
+      - name: Commit cleanup
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove dry-run mode completely"
+          git push
