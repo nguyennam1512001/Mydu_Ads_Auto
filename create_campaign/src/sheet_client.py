@@ -47,6 +47,7 @@ COL_WEBSITE_URL = "URL_Ladi"
 COL_PIXEL = "Pixel"
 COL_GENDER = "Gender"
 COL_AGE = "Age"
+COL_CAMP_STRUCTURE = "Camp_Structure"
 COL_RESULT = "RESULT"
 
 HEADER_ROW = 1
@@ -62,6 +63,9 @@ class SheetRow:
     campaign_name: str
     daily_budget: int
     post_id: str
+    campaign_count: int
+    adset_count: int
+    ad_count: int
     schedule: str | None = None
     group_ad_name: str | None = None 
     message_template_name: str | None = None
@@ -82,6 +86,9 @@ class WebsiteSalesRow:
     title: str
     website_url: str
     pixel_id: str
+    campaign_count: int
+    adset_count: int
+    ad_count: int
     schedule: str | None = None
     group_ad_name: str | None = None
     age_min: int | None = None
@@ -139,6 +146,26 @@ def _parse_budget(raw: str) -> int:
     if not digits:
         raise ValueError(f"không đọc được số tiền từ giá trị '{raw}'")
     return int(digits)
+
+
+def _parse_camp_structure(raw: str) -> tuple[int, int, int]:
+    """'1-2-3' -> 1 campaign, 2 adset, tổng 3 ad mỗi campaign."""
+    raw = (raw or "").strip() or "1-1-1"
+    match = re.fullmatch(r"(\d+)\s*-\s*(\d+)\s*-\s*(\d+)", raw)
+    if not match:
+        raise ValueError("Camp_Structure phải có dạng C-A-D, ví dụ 1-2-2")
+    campaign_count, adset_count, ad_count = (
+        int(value) for value in match.groups()
+    )
+    if not all(1 <= value <= 20 for value in (campaign_count, adset_count, ad_count)):
+        raise ValueError("Mỗi số trong Camp_Structure phải nằm trong khoảng 1-20")
+    if ad_count < adset_count:
+        raise ValueError(
+            "Số quảng cáo trong Camp_Structure không được nhỏ hơn số nhóm"
+        )
+    if campaign_count * (1 + adset_count + ad_count) > 200:
+        raise ValueError("Camp_Structure tạo quá 200 đối tượng; hãy giảm cấu trúc")
+    return campaign_count, adset_count, ad_count
     
 def _parse_age(raw: str) -> tuple[int | None, int | None]:
     """'27-55' -> (27, 55); để trống -> Meta tự động."""
@@ -252,6 +279,7 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
     idx_message_template = _col_to_index(header_map, COL_MESSAGE_TEMPLATE)
     idx_gender = _col_to_index(header_map, COL_GENDER)
     idx_age = _col_to_index(header_map, COL_AGE)
+    idx_camp_structure = _col_to_index(header_map, COL_CAMP_STRUCTURE)
     idx_result = _col_to_index(header_map, COL_RESULT)
     _RESULT_COLUMN_CACHE[id(worksheet)] = idx_result + 1
 
@@ -271,6 +299,7 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
         message_template_name = cell(row, idx_message_template)
         gender_raw = cell(row, idx_gender)
         age_raw = cell(row, idx_age)
+        camp_structure_raw = cell(row, idx_camp_structure)
         result = cell(row, idx_result)
 
         if not any([ad_account_id, page_id, campaign_name, budget_raw, post_id]):
@@ -299,6 +328,9 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
             schedule = _parse_schedule(schedule_date_raw, schedule_time_raw)
             age_min, age_max = _parse_age(age_raw)
             genders = _parse_gender(gender_raw)
+            campaign_count, adset_count, ad_count = _parse_camp_structure(
+                camp_structure_raw
+            )
         except ValueError as e:
             write_result(worksheet, row_number, f"Lỗi: {e}")
             continue
@@ -312,6 +344,9 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
                 group_ad_name=group_ad_name or None,
                 daily_budget=daily_budget,
                 post_id=post_id,
+                campaign_count=campaign_count,
+                adset_count=adset_count,
+                ad_count=ad_count,
                 schedule=schedule,
                 message_template_name=message_template_name or None,
                 age_min=age_min,
@@ -378,6 +413,7 @@ def read_website_sales_rows(
         COL_PIXEL,
         COL_GENDER,
         COL_AGE,
+        COL_CAMP_STRUCTURE,
         COL_RESULT,
     ]
     columns = {name: _col_to_index(header_map, name) for name in required_columns}
@@ -450,6 +486,9 @@ def read_website_sales_rows(
             )
             age_min, age_max = _parse_age(raw[COL_AGE])
             genders = _parse_gender(raw[COL_GENDER])
+            campaign_count, adset_count, ad_count = _parse_camp_structure(
+                raw[COL_CAMP_STRUCTURE]
+            )
         except ValueError as exc:
             write_result(worksheet, row_number, f"Lỗi: {exc}")
             continue
@@ -466,6 +505,9 @@ def read_website_sales_rows(
             title=title,
             website_url=raw[COL_WEBSITE_URL],
             pixel_id=raw[COL_PIXEL],
+            campaign_count=campaign_count,
+            adset_count=adset_count,
+            ad_count=ad_count,
             schedule=schedule,
             age_min=age_min,
             age_max=age_max,
