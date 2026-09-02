@@ -32,7 +32,7 @@ from src.message_templates import get_template_json
 SHEET_CAMPAIGN_TEMPLATE: dict = {
     "objective": "OUTCOME_ENGAGEMENT",
     "special_ad_categories": [],
-    "status": "PAUSED",
+    "status": "ACTIVE",
     "adsets": [
         {
             "billing_event": "IMPRESSIONS",
