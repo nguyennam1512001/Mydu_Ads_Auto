@@ -231,42 +231,74 @@ def run(config_path: str) -> None:
     print("\nHoàn tất!")
 
 
-def _build_campaign_config_from_row(row: "sheet_client.SheetRow") -> dict:
+def _numbered_name(base: str, label: str, index: int, total: int) -> str:
+    return base if total == 1 else f"{base} - {label}{index}"
+
+
+def _ads_per_adset(adset_count: int, ad_count: int) -> list[int]:
+    """Phân bổ tổng số quảng cáo lần lượt và không tạo nhóm rỗng."""
+    base, remainder = divmod(ad_count, adset_count)
+    return [base + (1 if index < remainder else 0) for index in range(adset_count)]
+
+
+def _build_campaign_configs_from_row(row: "sheet_client.SheetRow") -> list[dict]:
     """
     Ghép 1 dòng dữ liệu từ Google Sheet vào cấu hình mẫu SHEET_CAMPAIGN_TEMPLATE
     để ra 1 camp_cfg đầy đủ, dùng được cho process_campaign_config().
-    Mỗi dòng trong sheet = 1 campaign, với đúng 1 adset và 1 ad.
+    Số Campaign/AdSet/tổng Ad lấy từ Camp_Structure của từng dòng.
     """
-    cfg = copy.deepcopy(SHEET_CAMPAIGN_TEMPLATE)
-    cfg["name"] = row.campaign_name
-    cfg["daily_budget"] = row.daily_budget
+    configs: list[dict] = []
+    distribution = _ads_per_adset(row.adset_count, row.ad_count)
+    base_name = row.group_ad_name or row.campaign_name
+    for campaign_index in range(1, row.campaign_count + 1):
+        cfg = copy.deepcopy(SHEET_CAMPAIGN_TEMPLATE)
+        cfg["name"] = _numbered_name(
+            row.campaign_name, "C", campaign_index, row.campaign_count
+        )
+        cfg["daily_budget"] = row.daily_budget
+        template_adset = cfg["adsets"][0]
+        cfg["adsets"] = []
+        ads_before = 0
+        for adset_index, ads_in_adset in enumerate(distribution, start=1):
+            adset_cfg = copy.deepcopy(template_adset)
+            adset_cfg["name"] = _numbered_name(
+                base_name, "AS", adset_index, row.adset_count
+            )
+            adset_cfg["promoted_object"] = {"page_id": row.page_id}
+            targeting = adset_cfg["targeting"]
+            if row.age_min is not None and row.age_max is not None:
+                targeting["age_min"] = row.age_min
+                targeting["age_max"] = row.age_max
+            if row.genders is not None:
+                targeting["genders"] = row.genders
+            if row.schedule:
+                adset_cfg["start_time"] = row.schedule
 
-    adset_cfg = cfg["adsets"][0]
-    adset_cfg["name"] = row.group_ad_name or f"AdSet - {row.campaign_name}"
-    adset_cfg["promoted_object"] = {"page_id": row.page_id}
-    targeting = adset_cfg["targeting"]
-    if row.age_min is not None and row.age_max is not None:
-        targeting["age_min"] = row.age_min
-        targeting["age_max"] = row.age_max
-    if row.genders is not None:
-        targeting["genders"] = row.genders
-    if row.schedule:
-        adset_cfg["start_time"] = row.schedule
-
-    ad_cfg = adset_cfg["ads"][0]
-    ad_cfg["name"] = row.group_ad_name or f"Ad - {row.campaign_name}"
-    ad_cfg["page_id"] = row.page_id
-    ad_cfg["existing_post_id"] = row.post_id
-    if row.message_template_name:
-        ad_cfg["page_welcome_message"] = get_template_json(row.message_template_name)
-
-    return cfg
+            template_ad = adset_cfg["ads"][0]
+            adset_cfg["ads"] = []
+            for ad_index in range(1, ads_in_adset + 1):
+                ad_cfg = copy.deepcopy(template_ad)
+                global_ad_index = ads_before + ad_index
+                ad_cfg["name"] = _numbered_name(
+                    base_name, "AD", global_ad_index, row.ad_count
+                )
+                ad_cfg["page_id"] = row.page_id
+                ad_cfg["existing_post_id"] = row.post_id
+                if row.message_template_name:
+                    ad_cfg["page_welcome_message"] = get_template_json(
+                        row.message_template_name
+                    )
+                adset_cfg["ads"].append(ad_cfg)
+            ads_before += ads_in_adset
+            cfg["adsets"].append(adset_cfg)
+        configs.append(cfg)
+    return configs
 
 
 def run_from_sheet() -> None:
     """
     Chạy từ Google Sheet: mỗi dòng dữ liệu (chưa có kết quả ở cột Kết quả) sẽ
-    tạo ra 1 Campaign + 1 AdSet + 1 Ad, dùng chung cấu hình mẫu
+    tạo cấu trúc Campaign/AdSet/Ad theo cột Camp_Structure, dùng chung cấu hình mẫu
     SHEET_CAMPAIGN_TEMPLATE (targeting, objective...). Sau khi tạo xong (hoặc
     lỗi), ghi kết quả ngược lại cột `RESULT` của đúng dòng đó.
     """
@@ -291,16 +323,22 @@ def run_from_sheet() -> None:
 
     for row in rows:
         row_started = time.perf_counter()
-        camp_cfg = _build_campaign_config_from_row(row)
         try:
             account = accounts.get(row.ad_account_id)
             if account is None:
                 account = get_ad_account(row.ad_account_id)
                 accounts[row.ad_account_id] = account
-            result = process_campaign_config(account, camp_cfg)
+            results = [
+                process_campaign_config(account, camp_cfg)
+                for camp_cfg in _build_campaign_configs_from_row(row)
+            ]
+            campaign_ids = [result["campaign_id"] for result in results]
+            adset_count = sum(len(result["adset_ids"]) for result in results)
+            ad_count = sum(len(result["ad_ids"]) for result in results)
             message = (
-                f"Thành công - Campaign: {result['campaign_id']}, "
-                f"AdSet: {result['adset_ids'][0]}, Ad: {result['ad_ids'][0]}"
+                f"Thành công {row.campaign_count}-{row.adset_count}-{row.ad_count} - "
+                f"Campaign: {', '.join(campaign_ids)}, "
+                f"AdSet: {adset_count}, Ad: {ad_count}"
             )
             sheet_client.write_result(worksheet, row.row_number, message)
             print(
