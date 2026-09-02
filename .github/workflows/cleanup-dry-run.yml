@@ -26,6 +26,22 @@ jobs:
           def write(path, text):
               Path(path).write_text(text, encoding="utf-8")
 
+          def replace_once(text, old, new, path):
+              if old not in text:
+                  raise RuntimeError(f"Không tìm thấy đoạn cần sửa trong {path}: {old[:100]!r}")
+              return text.replace(old, new, 1)
+
+          def dedent_block(text, start_marker, end_marker, spaces, path):
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              block = text[start:end]
+              prefix = " " * spaces
+              block = "".join(
+                  line[spaces:] if line.startswith(prefix) else line
+                  for line in block.splitlines(keepends=True)
+              )
+              return text[:start] + block + text[end:]
+
           # GitHub Actions: remove dry_run input and --dry-run argument.
           for path in [
               ".github/workflows/01-text-content.yml",
@@ -48,7 +64,7 @@ jobs:
                   raise RuntimeError(f"Không sửa được dry-run trong {path}: input={n1}, arg={n2}")
               write(path, text)
 
-          # Text Content generator: always run for real.
+          # Text Content generator: always execute real generation.
           path = "post_page/src/text_content_generator.py"
           text = read(path)
           replacements = [
@@ -65,12 +81,10 @@ jobs:
               ("        dry_run=args.dry_run,\n", ""),
           ]
           for old, new in replacements:
-              if old not in text:
-                  raise RuntimeError(f"Không tìm thấy đoạn cần xoá trong {path}: {old[:80]!r}")
-              text = text.replace(old, new, 1)
+              text = replace_once(text, old, new, path)
           write(path, text)
 
-          # Facebook Page CLI: remove its hidden dry-run command-line mode too.
+          # Facebook Page publisher: remove hidden dry-run CLI and branches.
           path = "post_page/src/cli.py"
           text = read(path)
           replacements = [
@@ -98,12 +112,10 @@ jobs:
               ("    asyncio.run(run(dry_run=args.dry_run, limit=args.limit))\n", "    asyncio.run(run(limit=args.limit))\n"),
           ]
           for old, new in replacements:
-              if old not in text:
-                  raise RuntimeError(f"Không tìm thấy đoạn cần xoá trong {path}: {old[:80]!r}")
-              text = text.replace(old, new, 1)
+              text = replace_once(text, old, new, path)
           write(path, text)
 
-          # Settings: publishing always requires the real credentials.
+          # Settings: real publishing credentials are always required.
           path = "post_page/src/settings.py"
           text = read(path)
           pattern = (
@@ -133,24 +145,188 @@ jobs:
               raise RuntimeError(f"Không sửa được logic dry-run trong {path}: count={count}")
           write(path, text)
 
-          # Documentation: remove instructions for dry-run.
+          # Post Page documentation.
           path = "post_page/README.md"
           text = read(path)
           for line in [
               "- Giữ `dry_run` bật để xem trước danh sách sẽ xử lý mà không gọi AI.\n",
               "- Tắt `dry_run` để chạy thật.\n",
           ]:
-              if line not in text:
-                  raise RuntimeError(f"Không tìm thấy dòng dry-run trong {path}: {line!r}")
-              text = text.replace(line, "", 1)
+              text = replace_once(text, line, "", path)
           write(path, text)
+
+          # Campaign creator: remove all dry-run execution paths.
+          path = "create_campaign/src/cli.py"
+          text = read(path)
+          text = replace_once(
+              text,
+              "    python run.py config/campaigns.example.yaml --dry-run\n",
+              "",
+              path,
+          )
+          text = replace_once(
+              text,
+              "def process_campaign_config(account, camp_cfg: dict, dry_run: bool = False) -> dict:\n",
+              "def process_campaign_config(account, camp_cfg: dict) -> dict:\n",
+              path,
+          )
+
+          # Keep only the real Campaign creation branch and dedent it.
+          text = replace_once(
+              text,
+              "    if dry_run:\n        campaign_id = \"<sẽ-tạo>\"\n    else:\n",
+              "",
+              path,
+          )
+          text = dedent_block(
+              text,
+              "        campaign = create_campaign(\n",
+              "    for adset_cfg in camp_cfg.get(\"adsets\", []):\n",
+              4,
+              path,
+          )
+
+          # Keep only the real AdSet creation branch and dedent it.
+          text = replace_once(
+              text,
+              "        if dry_run:\n            adset_id = \"<sẽ-tạo>\"\n        else:\n",
+              "",
+              path,
+          )
+          text = dedent_block(
+              text,
+              "            uses_campaign_budget = bool(camp_cfg.get(\"daily_budget\"))\n",
+              "        for ad_cfg in adset_cfg.get(\"ads\", []):\n",
+              4,
+              path,
+          )
+          text = replace_once(
+              text,
+              "            if dry_run:\n                continue\n\n",
+              "",
+              path,
+          )
+
+          # YAML config execution always calls the real API.
+          text = replace_once(text, "def run(config_path: str, dry_run: bool = False) -> None:\n", "def run(config_path: str) -> None:\n", path)
+          text = replace_once(
+              text,
+              "    if dry_run:\n        print(\"=== DRY-RUN: chỉ in kế hoạch, KHÔNG gọi API thật ===\\n\")\n    else:\n        init_api()\n\n",
+              "    init_api()\n\n",
+              path,
+          )
+          text = replace_once(text, "    account = get_ad_account() if not dry_run else None\n", "    account = get_ad_account()\n", path)
+          text = replace_once(text, "        process_campaign_config(account, camp_cfg, dry_run=dry_run)\n", "        process_campaign_config(account, camp_cfg)\n", path)
+
+          # Google Sheet execution always calls the real API and writes results.
+          text = replace_once(text, "def run_from_sheet(dry_run: bool = False) -> None:\n", "def run_from_sheet() -> None:\n", path)
+          text = replace_once(
+              text,
+              "    if dry_run:\n        print(\"=== DRY-RUN: chỉ in kế hoạch, KHÔNG gọi API thật ===\\n\")\n    else:\n        init_api()\n\n",
+              "    init_api()\n\n",
+              path,
+          )
+          text = replace_once(
+              text,
+              "            if dry_run:\n                account = None\n            else:\n",
+              "",
+              path,
+          )
+          text = dedent_block(
+              text,
+              "                account = accounts.get(row.ad_account_id)\n",
+              "            result = process_campaign_config(account, camp_cfg, dry_run=dry_run)\n",
+              4,
+              path,
+          )
+          text = replace_once(
+              text,
+              "            result = process_campaign_config(account, camp_cfg, dry_run=dry_run)\n",
+              "            result = process_campaign_config(account, camp_cfg)\n",
+              path,
+          )
+          text = replace_once(text, "            if not dry_run:\n", "", path)
+          text = dedent_block(
+              text,
+              "                message = (\n",
+              "        except Exception as e:  # noqa: BLE001 - cố tình bắt mọi lỗi để ghi vào sheet\n",
+              4,
+              path,
+          )
+          text = replace_once(
+              text,
+              "            if not dry_run:\n                sheet_client.write_result(worksheet, row.row_number, error_message)\n",
+              "            sheet_client.write_result(worksheet, row.row_number, error_message)\n",
+              path,
+          )
+
+          # Remove --dry-run CLI option and arguments.
+          text = replace_once(
+              text,
+              "    parser.add_argument(\n        \"--dry-run\",\n        action=\"store_true\",\n        help=\"Chỉ in ra kế hoạch sẽ tạo, không gọi API thật (an toàn để kiểm tra trước)\",\n    )\n",
+              "",
+              path,
+          )
+          text = replace_once(text, "        run_from_sheet(dry_run=args.dry_run)\n", "        run_from_sheet()\n", path)
+          text = replace_once(text, "        run(args.config, dry_run=args.dry_run)\n", "        run(args.config)\n", path)
+          write(path, text)
+
+          # Campaign documentation: remove obsolete preview-mode instructions.
+          path = "create_campaign/README.md"
+          text = read(path)
+          text = replace_once(
+              text,
+              "> Muốn chạy thử trên máy cá nhân (không qua Actions) vẫn được — chỉ cần set các\n> biến này thành biến môi trường (environment variable) của shell trước khi chạy\n> `python run.py`, không bắt buộc phải tạo file `.env`.\n\n",
+              "> Khi chạy trên máy cá nhân, set các giá trị trên thành biến môi trường của shell trước khi chạy `python run.py`; không bắt buộc tạo file `.env`.\n\n",
+              path,
+          )
+          old_run = (
+              "### Bước 4 — Chạy\n"
+              "Vào tab **Actions** trên GitHub → chọn workflow **\"Tạo Campaign từ Google Sheet\"**\n"
+              "→ **Run workflow** → chọn `dry_run = true` để xem thử trước, hoặc `false` để chạy\n"
+              "thật. Workflow (`.github/workflows/run-campaign-from-sheet.yml`) sẽ tự đọc các\n"
+              "Secrets ở trên, ghi `GOOGLE_CREDENTIALS` ra thành file tạm rồi chạy\n"
+              "`python run.py --from-sheet`, xoá file tạm sau khi chạy xong.\n"
+          )
+          new_run = (
+              "### Bước 4 — Chạy\n"
+              "Vào tab **Actions** trên GitHub → chọn workflow tạo Campaign → **Run workflow**.\n"
+              "Workflow đọc các Secrets đã cấu hình và chạy `python run.py --from-sheet`.\n"
+          )
+          text = replace_once(text, old_run, new_run, path)
+          text = replace_once(text, "python run.py --from-sheet --dry-run\n", "", path)
+          text, count = re.subn(
+              r'## 5\. Chạy thử \(dry-run\) trước khi tạo thật\n.*?(?=## 6\. Chạy thật\n)',
+              "",
+              text,
+              count=1,
+              flags=re.DOTALL,
+          )
+          if count != 1:
+              raise RuntimeError(f"Không xoá được mục chạy thử trong {path}")
+          text = replace_once(
+              text,
+              "Chạy qua GitHub Actions: chọn `dry_run = false` khi Run workflow. Hoặc chạy local:\n",
+              "Chạy qua GitHub Actions: chọn workflow tạo Campaign và bấm **Run workflow**. Hoặc chạy local:\n",
+              path,
+          )
+          write(path, text)
+
+      - name: Verify Python syntax
+        shell: bash
+        run: |
+          python -m py_compile \
+            post_page/src/text_content_generator.py \
+            post_page/src/cli.py \
+            post_page/src/settings.py \
+            create_campaign/src/cli.py
 
       - name: Remove temporary cleanup workflow and verify repository is clean
         shell: bash
         run: |
           rm .github/workflows/cleanup-dry-run.yml
           if grep -RniE 'dry_run|dry-run|DRY-RUN|Chạy thử|chạy thử|không gọi AI và không ghi Sheet|Chỉ kiểm tra dữ liệu' \
-              --exclude-dir=.git .; then
+              --exclude-dir=.git --exclude-dir=__pycache__ .; then
             echo "Vẫn còn nội dung liên quan chế độ chạy thử."
             exit 1
           fi
