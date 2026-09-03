@@ -118,26 +118,23 @@ def read_prompt_config(
     raise ValueError(f"Không tìm thấy Prompt_Name '{prompt_name}' trong tab '{PROMPT_TAB}'")
 
 
-FINAL_LINE = "SIZE: 40–75kg. Kiểm tra hàng trước khi thanh toán."
 FALLBACK_MODELS = ["gemini-3.1-flash-lite", "gemini-2.5-flash-lite"]
 RETRY_DELAYS_SECONDS = [0, 5, 15]
 DEFAULT_MAX_WORKERS = 3
 
 
 def validate_content(content: str, product: Product) -> list[str]:
+    """Chỉ kiểm tra các điều kiện chung cho mọi bộ prompt.
+
+    Bố cục, độ dài và câu kết thuộc về Prompt_Name được chọn trong Sheet;
+    không áp một khuôn cố định ở đây vì mỗi bộ prompt có thể yêu cầu khác nhau.
+    """
     issues = []
     lines = [line.strip() for line in content.splitlines() if line.strip()]
-    if (
-        not lines
-        or product.code.upper() not in lines[0].upper()
-        or "–" not in lines[0]
-        or lines[0] != lines[0].upper()
-    ):
-        issues.append("dòng tiêu đề phải viết hoa theo dạng MÃ SP – TÊN SẢN PHẨM")
-    if len(lines) < 5:
-        issues.append("phải có tiêu đề, ba đoạn nội dung và dòng kết thúc")
-    if not lines or lines[-1] != FINAL_LINE:
-        issues.append(f"dòng cuối phải đúng: {FINAL_LINE}")
+    if not lines:
+        issues.append("nội dung đang trống")
+    elif product.code.casefold() not in content.casefold():
+        issues.append(f"nội dung phải có mã sản phẩm {product.code}")
     if content.strip().casefold() == product.description.strip().casefold():
         issues.append("không được sao chép nguyên văn thông tin nguồn")
     return issues
@@ -187,18 +184,15 @@ def generate_content(
 ) -> str:
     model_input = (
         f"CÂU LỆNH CHÍNH TỪ PROMPT ĐÃ CHỌN:\n{prompt.strip()}\n\n"
-        "Dùng nội dung trong MẪU chỉ để học bố cục, giọng văn và cách trình bày. "
-        "Không sao chép nguyên văn nội dung mẫu hoặc thông tin sản phẩm.\n\n"
+        "Hãy tuân thủ chính xác câu lệnh chính ở trên, bao gồm bố cục, độ dài "
+        "và cách viết đoạn kết. Dùng nội dung trong MẪU chỉ để học bố cục, "
+        "giọng văn và cách trình bày; nếu mẫu và câu lệnh khác nhau thì ưu tiên "
+        "câu lệnh. Không sao chép nguyên văn nội dung mẫu hoặc thông tin sản phẩm.\n\n"
         f"CONTENT MẪU CÙNG PROMPT_NAME:\n{template.strip()}\n\n"
         f"MÃ SP: {product.code}\n"
         f"THÔNG TIN SẢN PHẨM: {product.description}\n\n"
-        "Viết một bài quảng cáo mới, khoảng 100 chữ, theo đúng cấu trúc:\n"
-        "1. Dòng đầu: MÃ SP – TÊN SẢN PHẨM, viết hoa.\n"
-        "2. Đoạn mở đầu giới thiệu điểm nổi bật.\n"
-        "3. Đoạn mô tả lại chất liệu, kiểu dáng và chi tiết thiết kế.\n"
-        "4. Đoạn gợi ý hoàn cảnh sử dụng.\n"
-        f"5. Dòng cuối phải chính xác: {FINAL_LINE}\n"
-        "Chỉ trả về Text_Content hoàn chỉnh, không giải thích, không Markdown và "
+        "Viết bài mới theo đúng bộ prompt đã chọn. Chỉ trả về Text_Content "
+        "hoàn chỉnh, không giải thích, không Markdown và "
         "không đặt dấu ngoặc kép ở đầu hoặc cuối."
     )
     issues = []
@@ -329,3 +323,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
