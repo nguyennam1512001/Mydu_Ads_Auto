@@ -30,13 +30,13 @@ from src.message_templates import get_template_json
 # dùng chung cho MỌI campaign được tạo từ Google Sheet. Chỉ tên campaign, ngân
 # sách, page_id và post_id là lấy riêng theo từng dòng trong sheet.
 SHEET_CAMPAIGN_TEMPLATE: dict = {
-    "objective": "OUTCOME_ENGAGEMENT",
+    "objective": "OUTCOME_SALES",
     "special_ad_categories": [],
     "status": "ACTIVE",
     "adsets": [
         {
             "billing_event": "IMPRESSIONS",
-            "optimization_goal": "CONVERSATIONS",
+            "optimization_goal": "MESSAGING_PURCHASE_CONVERSION",
             "destination_type": "MESSENGER",
             "status": "ACTIVE",
             "targeting": {
