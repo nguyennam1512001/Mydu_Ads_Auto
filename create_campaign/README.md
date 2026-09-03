@@ -143,7 +143,7 @@ script có thể đọc trực tiếp từ đó thay vì phải sửa tay file Y
 | `RESULT` | Kết quả — **để trống**, script tự ghi `Thành công - ...` hoặc `Lỗi: ...` sau khi chạy | không (script tự điền) |
 
 Mỗi dòng tạo cấu trúc theo `Camp_Structure`, dùng chung cấu hình mặc định cho
-targeting. Campaign dùng mục tiêu Sales, đích Messenger và tối ưu số lượt mua\nqua tin nhắn (`MESSAGING_PURCHASE_CONVERSION`). Ví dụ `1-2-2` tạo 1 Campaign,\n2 AdSet và tổng 2 Ad
+targeting. Campaign giữ mục tiêu Lượt tương tác, đích Messenger và tối ưu số lượt mua\nqua tin nhắn (`MESSAGING_PURCHASE_CONVERSION`). Ví dụ `1-2-2` tạo 1 Campaign,\n2 AdSet và tổng 2 Ad
 (mỗi AdSet 1 Ad); `1-1-3` tạo 1 Campaign, 1 AdSet và 3 Ad. Nếu tổng Ad không
 chia đều, Ad được phân bổ lần lượt: `1-2-3` tạo 2 Ad ở nhóm đầu và 1 Ad ở nhóm
 sau. Tổng Ad phải lớn hơn hoặc bằng số AdSet. Muốn đổi cấu hình mặc định, sửa
