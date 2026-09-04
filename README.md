@@ -16,6 +16,8 @@ Vào tab **Actions** và chọn workflow cần chạy:
 5. `Đăng Facebook Page -> Tạo Campaign`
 6. `Chạy toàn bộ`
 7. `Tạo Campaign Doanh số Website`
+8. `Lấy Image Hash`
+9. `Đăng Facebook Page ko có nút gửi tin nhắn`
 
 Các chế độ ghép chạy tuần tự. Bước sau chỉ chạy khi bước trước hoàn tất thành công:
 
@@ -33,7 +35,7 @@ Mydu_Ads_Auto/
     └── workflows/
         ├── 01-text-content.yml
         ├── ...
-        └── 07-website-sales.yml
+        └── 09-publish-page-no-message-button.yml
 ```
 
 ## GitHub Secrets cần cấu hình
@@ -56,3 +58,4 @@ Repository variable tùy chọn:
 - `FB_GRAPH_VERSION` — nếu không đặt sẽ dùng `v25.0`.
 
 > GitHub không tự sao chép Secrets khi gộp repository. Bạn cần tạo các Secrets trên trong **Settings → Secrets and variables → Actions** của repo mới.
+
