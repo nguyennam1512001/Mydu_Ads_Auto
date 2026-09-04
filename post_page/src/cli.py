@@ -21,7 +21,7 @@ from src.sheet_client import (
 from src.telegram_client import TelegramDownloader
 
 
-async def run(*, limit: int | None = None) -> None:
+async def run(*, limit: int | None = None, message_button: bool = True) -> None:
     load_dotenv()
     settings = Settings.from_env()
     sheet = SheetRepository(
@@ -99,6 +99,7 @@ async def run(*, limit: int | None = None) -> None:
                             video_path,
                             row.text_content,
                             title=row.description,
+                            message_button=message_button,
                         )
                         print(
                             f"Dòng {row.row_number}: upload Meta mất "
@@ -140,5 +141,16 @@ async def run(*, limit: int | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tự động đăng video lên Facebook Page")
     parser.add_argument("--limit", type=int, help="Giới hạn số dòng xử lý")
+    parser.add_argument(
+        "--no-message-button",
+        action="store_true",
+        help="Đăng bài không kèm nút Gửi tin nhắn",
+    )
     args = parser.parse_args()
-    asyncio.run(run(limit=args.limit))
+    asyncio.run(
+        run(
+            limit=args.limit,
+            message_button=not args.no_message_button,
+        )
+    )
+
