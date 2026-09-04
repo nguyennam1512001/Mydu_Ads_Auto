@@ -58,6 +58,7 @@ class FacebookPagePublisher:
         message: str,
         *,
         title: str = "",
+        message_button: bool = True,
     ) -> str:
         page_token = self._page_token(page_id)
         # Meta giới hạn tiêu đề video tối đa 255 ký tự. SP_Description có thể
@@ -100,21 +101,26 @@ class FacebookPagePublisher:
                     raise RuntimeError("Meta không cập nhật tiến độ upload video")
                 start_offset = new_start
 
-        call_to_action = {
-            "type": "MESSAGE_PAGE",
-            "value": {"link": f"https://m.me/{page_id}"},
+        finish_data = {
+            "upload_phase": "finish",
+            "upload_session_id": upload_session_id,
+            "description": message,
+            "title": safe_title,
+            "published": "true",
+            "access_token": page_token,
         }
+        if message_button:
+            call_to_action = {
+                "type": "MESSAGE_PAGE",
+                "value": {"link": f"https://m.me/{page_id}"},
+            }
+            finish_data["call_to_action"] = json.dumps(
+                call_to_action,
+                ensure_ascii=False,
+            )
         finish = self.http.post(
             f"{self.base_url}/{page_id}/videos",
-            data={
-                "upload_phase": "finish",
-                "upload_session_id": upload_session_id,
-                "description": message,
-                "title": safe_title,
-                "published": "true",
-                "call_to_action": json.dumps(call_to_action, ensure_ascii=False),
-                "access_token": page_token,
-            },
+            data=finish_data,
             timeout=120,
         )
         self._raise_for_graph(finish)
@@ -201,3 +207,4 @@ class FacebookPagePublisher:
             "Hết thời gian lấy POST_ID từ Post Link. "
             f"Trạng thái cuối: {last_status}"
         )
+
