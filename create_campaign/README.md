@@ -195,6 +195,26 @@ dùng `Mã` để lấy `Telegram_video_link`, `Text_Content` và `Title` của 
 phẩm từ tab `Bài viết`, tải video từ Telegram, tối ưu sự kiện `PURCHASE` và dùng
 nút `ORDER_NOW`. Dòng đã có `RESULT` sẽ được bỏ qua.
 
+Workflow 7 ghi kết quả vào tab **Bài viết**, tìm dòng theo `Mã`. Tab này cần
+có sẵn các cột `Mã`, `FB_UPLOAD_ID`, `POST_ID`, `Post Link`; chương trình kiểm
+tra tiêu đề trước khi upload. Ngay sau upload, ghi `FB_UPLOAD_ID` dạng text và
+xóa hai giá trị bài viết cũ để không gắn nhầm vào video mới. Bước chờ thumbnail
+vẫn giữ nguyên vì cần thumbnail để tạo creative.
+
+Sau mỗi lần tạo ad, đọc `effective_object_story_id` của creative đúng một lần.
+Nếu có ID thì đọc `permalink_url` của bài viết đúng một lần. Không chờ, không
+thử lại khi thiếu dữ liệu hoặc API báo lỗi; trường nào có thì lưu trường đó.
+Lỗi đọc thông tin bài viết chỉ được ghi log, không làm việc tạo campaign thất
+bại. Lỗi upload/tạo quảng cáo/ghi Sheet vẫn được báo như trước.
+
+Một ad lưu ID/link đơn; nhiều ad lưu danh sách JSON theo thứ tự tạo ad, dùng
+`null` ở vị trí chưa có dữ liệu. Nếu cả danh sách chưa có dữ liệu thì ô để
+trống. `POST_ID` chỉ lưu phần sau dấu `_`. Các danh sách này không phải một
+ID/link đơn để đưa trực tiếp vào workflow 2. Nếu nhiều dòng `Lên Camp` dùng
+cùng `Mã`, bộ kết quả của dòng xử lý sau sẽ thay thế bộ trước trong `Bài viết`.
+Video thư viện quảng cáo không đảm bảo có thể lấy bài tương ứng chỉ qua Video
+ID trong workflow 2; workflow 7 lấy bài qua creative.
+
 Muốn chạy trên máy cá nhân thay vì Actions: set 3 secrets trên thành biến môi
 trường của shell (`GOOGLE_SERVICE_ACCOUNT_FILE` trỏ tới đường dẫn file JSON thật
 trên máy), rồi chạy:
