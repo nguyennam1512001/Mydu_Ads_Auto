@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import mimetypes
 import os
 import re
 from pathlib import Path
@@ -11,6 +12,8 @@ from urllib.parse import urlparse
 
 import gspread
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -37,15 +40,19 @@ def required_env(name: str) -> str:
     return value
 
 
-def worksheet():
-    sheet_id = required_env("GOOGLE_SHEET_ID")
+def google_credentials() -> Credentials:
     credentials_json = required_env("GOOGLE_CREDENTIALS")
-    tab_name = os.getenv("GOOGLE_SHEET_TAB", "Bài viết")
     try:
         info = json.loads(credentials_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"GOOGLE_CREDENTIALS không phải JSON hợp lệ: {exc}") from exc
-    creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+    return Credentials.from_service_account_info(info, scopes=SCOPES)
+
+
+def worksheet(creds: Credentials | None = None):
+    sheet_id = required_env("GOOGLE_SHEET_ID")
+    tab_name = os.getenv("GOOGLE_SHEET_TAB", "Bài viết")
+    creds = creds or google_credentials()
     return gspread.authorize(creds).open_by_key(sheet_id).worksheet(tab_name)
 
 
@@ -75,14 +82,69 @@ def image_filename(link: str) -> str:
     return f"telegram_{digest}.jpg"
 
 
-def raw_url(filename: str) -> str:
-    repository = os.getenv("GITHUB_REPOSITORY", "nguyennam1512001/Mydu_Ads_Auto")
-    branch = os.getenv("GITHUB_REF_NAME", "main") or "main"
-    return f"https://raw.githubusercontent.com/{repository}/{branch}/preview_images/{filename}"
+def drive_image_url(file_id: str) -> str:
+    return (
+        "https://drive.usercontent.google.com/download"
+        f"?id={file_id}&export=view&authuser=0"
+    )
+
+
+def find_drive_file(drive, folder_id: str, filename: str) -> str | None:
+    safe_name = filename.replace("'", "\\'")
+    query = (
+        f"name = '{safe_name}' and '{folder_id}' in parents "
+        "and trashed = false"
+    )
+    result = drive.files().list(
+        q=query,
+        spaces="drive",
+        fields="files(id,name)",
+        pageSize=1,
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+    ).execute()
+    files = result.get("files", [])
+    return files[0]["id"] if files else None
+
+
+def ensure_public_reader(drive, file_id: str) -> None:
+    permissions = drive.permissions().list(
+        fileId=file_id,
+        fields="permissions(id,type,role)",
+        supportsAllDrives=True,
+    ).execute().get("permissions", [])
+    if any(p.get("type") == "anyone" and p.get("role") == "reader" for p in permissions):
+        return
+    drive.permissions().create(
+        fileId=file_id,
+        body={"type": "anyone", "role": "reader"},
+        fields="id",
+        supportsAllDrives=True,
+    ).execute()
+
+
+def upload_to_drive(drive, folder_id: str, path: Path) -> str:
+    existing_id = find_drive_file(drive, folder_id, path.name)
+    if existing_id:
+        ensure_public_reader(drive, existing_id)
+        return existing_id
+
+    mime_type = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+    media = MediaFileUpload(str(path), mimetype=mime_type, resumable=False)
+    created = drive.files().create(
+        body={"name": path.name, "parents": [folder_id]},
+        media_body=media,
+        fields="id",
+        supportsAllDrives=True,
+    ).execute()
+    file_id = created["id"]
+    ensure_public_reader(drive, file_id)
+    return file_id
 
 
 async def download_previews(limit: int | None, output: Path) -> None:
-    ws = worksheet()
+    creds = google_credentials()
+    ws = worksheet(creds)
     values = ws.get_all_values()
     if not values:
         raise ValueError("Tab Bài viết đang trống")
@@ -126,9 +188,11 @@ async def download_previews(limit: int | None, output: Path) -> None:
 
     api_hash = required_env("TELEGRAM_API_HASH")
     session = required_env("TELEGRAM_SESSION")
-    preview_dir = Path("preview_images")
-    preview_dir.mkdir(parents=True, exist_ok=True)
+    drive_folder_id = required_env("GOOGLE_DRIVE_PREVIEW_FOLDER_ID")
+    temp_dir = Path("preview_temp")
+    temp_dir.mkdir(parents=True, exist_ok=True)
     updates: list[dict[str, object]] = []
+    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
 
     client = TelegramClient(StringSession(session), api_id, api_hash)
     await client.connect()
@@ -138,6 +202,7 @@ async def download_previews(limit: int | None, output: Path) -> None:
 
         entity_cache: dict[int | str, object] = {}
         for row_number, link in pending:
+            destination: Path | None = None
             try:
                 entity_ref, message_id = parse_message_link(link)
                 entity = entity_cache.get(entity_ref)
@@ -150,7 +215,7 @@ async def download_previews(limit: int | None, output: Path) -> None:
                     raise ValueError("Không tìm thấy tin nhắn hoặc tin nhắn không có media")
 
                 filename = image_filename(link)
-                destination = preview_dir / filename
+                destination = temp_dir / filename
                 downloaded = await client.download_media(
                     message,
                     file=str(destination),
@@ -168,16 +233,20 @@ async def download_previews(limit: int | None, output: Path) -> None:
                         destination.unlink()
                     downloaded_path.replace(destination)
 
-                url = raw_url(filename)
-                updates.append({"row": row_number, "url": url})
-                print(f"OK dòng {row_number}: {filename}")
+                file_id = upload_to_drive(drive, drive_folder_id, destination)
+                url = drive_image_url(file_id)
+                updates.append({"row": row_number, "url": url, "file_id": file_id})
+                print(f"OK dòng {row_number}: {filename} -> Drive {file_id}")
             except Exception as exc:
                 print(f"LỖI dòng {row_number}: {exc}")
+            finally:
+                if destination and destination.exists():
+                    destination.unlink()
     finally:
         await client.disconnect()
 
     output.write_text(json.dumps(updates, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Đã chuẩn bị {len(updates)} ảnh xem trước.")
+    print(f"Đã upload {len(updates)} ảnh xem trước lên Google Drive.")
 
 
 def apply_updates(input_path: Path) -> None:
@@ -214,7 +283,9 @@ def apply_updates(input_path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lấy thumbnail video Telegram và ghi Preview_Image vào Google Sheet")
+    parser = argparse.ArgumentParser(
+        description="Lấy thumbnail video Telegram, upload Google Drive và ghi Preview_Image vào Google Sheet"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     download_parser = subparsers.add_parser("download")
