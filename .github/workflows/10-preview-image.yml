@@ -51,19 +51,20 @@ jobs:
           python preview_image/run.py download "${args[@]}"
 
       - name: Lưu ảnh preview vào repository
-        id: save_images
         shell: bash
         run: |
+          if [[ ! -d preview_images ]]; then
+            echo "Không có ảnh mới cần lưu."
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add preview_images/
           if git diff --cached --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Không có ảnh mới cần commit."
           else
             git commit -m "Add Telegram preview images"
             git push
-            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Ghi Preview_Image vào Google Sheet
