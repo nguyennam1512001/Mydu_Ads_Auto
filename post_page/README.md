@@ -22,7 +22,22 @@ Tên cột nằm ở hàng 1; vị trí A, B, C... không quan trọng.
 
 Bạn cần tạo đầy đủ các cột trên ở hàng 1. Chương trình không tự thêm, xóa hoặc
 di chuyển cột. Nếu thiếu cột, chương trình dừng và báo tên cột bị thiếu.
-Dòng đã có `Post Link` sẽ được bỏ qua.
+Dòng chỉ được bỏ qua khi đủ cả `Post Link`, `FB_UPLOAD_ID` và `POST_ID`.
+Nếu thiếu bất kỳ trường nào, chương trình lấy bổ sung và giữ nguyên giá trị
+đã có. Có `FB_UPLOAD_ID` thì truy vấn video; có link video/reel/watch thì lấy
+Video ID từ link; chỉ có `POST_ID` hoặc link bài viết thì truy vấn bài viết
+để lấy link và ID video liên quan. Không dùng POST_ID làm Video ID.
+
+Dòng lấy bổ sung cần `PAGE_ID`, không cần giá trị `Text_Content` hay
+`Telegram_video_link` (các tiêu đề cột vẫn phải tồn tại). Khi cả ba trường
+đều trống, chương trình đăng mới như trước và yêu cầu đủ nội dung/link Telegram.
+Nếu đã có một trong ba trường thì lỗi truy vấn không dẫn đến upload lại.
+Link chia sẻ/rút gọn không xác định được ID sẽ báo lỗi, cần bổ sung ID trực tiếp.
+
+Việc lấy bổ sung yêu cầu video có thông tin bài viết mà token đọc được.
+`FB_UPLOAD_ID` của video quảng cáo từ workflow 7 không đảm bảo đáp ứng điều này;
+để lấy đúng bài quảng cáo cần truy theo creative. Nếu truy vấn lỗi hoặc hết
+thời gian chờ, chương trình ghi `POST_STATUS` và không tự đăng video mới.
 
 ## Repository secrets
 
