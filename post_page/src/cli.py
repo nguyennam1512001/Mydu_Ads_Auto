@@ -50,30 +50,28 @@ async def run(*, limit: int | None = None, message_button: bool = True) -> None:
             row_started = time.monotonic()
             try:
                 sheet.update(row.row_number, **{COL_STATUS: "Đang xử lý"})
-                if row.post_link and not row.post_id:
-                    recover_started = time.monotonic()
-                    post_id = publisher.recover_post_id(
-                        row.page_id,
-                        row.post_link,
-                    )
-                    print(
-                        f"Dòng {row.row_number}: lấy POST_ID mất "
-                        f"{time.monotonic() - recover_started:.1f}s"
-                    )
-                    sheet.update(
-                        row.row_number,
-                        **{
-                            COL_POST_ID: post_id,
-                            COL_STATUS: "Thành công",
-                        },
-                    )
-                    print(
-                        f"Dòng {row.row_number}: đã lấy POST_ID {post_id} "
-                        "từ Post Link"
-                    )
-                    continue
-
                 video_id = row.video_id
+                post_id = row.post_id
+                post_link = row.post_link
+                if not video_id and (post_id or post_link):
+                    recovered = publisher.recover_video_reference(row.page_id, post_id, post_link)
+                    video_id = recovered.video_id
+                    post_id = post_id or recovered.post_id
+                    post_link = post_link or recovered.permalink_url
+                    updates = {
+                        name: value for name, value, original in [
+                            (COL_VIDEO_ID, video_id, row.video_id),
+                            (COL_POST_ID, post_id, row.post_id),
+                            (COL_POST_LINK, post_link, row.post_link),
+                        ] if value and not original
+                    }
+                    if updates:
+                        sheet.update(row.row_number, **updates)
+                    if not video_id:
+                        raise ValueError("Chưa lấy được FB_UPLOAD_ID của bài viết hiện có; không đăng lại")
+                    if post_id and post_link:
+                        sheet.update(row.row_number, **{COL_STATUS: "Thành công"})
+                        continue
                 if not video_id:
                     if telegram is None:
                         telegram = await stack.enter_async_context(
@@ -122,9 +120,9 @@ async def run(*, limit: int | None = None, message_button: bool = True) -> None:
                 sheet.update(
                     row.row_number,
                     **{
-                        COL_VIDEO_ID: post.video_id,
-                        COL_POST_ID: post.post_id,
-                        COL_POST_LINK: post.permalink_url,
+                        COL_VIDEO_ID: video_id,
+                        COL_POST_ID: post_id or post.post_id,
+                        COL_POST_LINK: post_link or post.permalink_url,
                         COL_STATUS: "Thành công",
                     },
                 )
@@ -153,4 +151,3 @@ def main() -> None:
             message_button=not args.no_message_button,
         )
     )
-
