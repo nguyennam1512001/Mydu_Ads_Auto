@@ -25,6 +25,7 @@ from src.sheet_client import (
     write_result,
 )
 from src.telegram_client import TelegramDownloader
+from src.website_results import WebsiteResultWriter, read_post_once
 
 
 def numbered_name(base: str, label: str, index: int, total: int) -> str:
@@ -52,7 +53,8 @@ async def run(*, limit: int | None = None) -> None:
         raise ValueError("TELEGRAM_API_ID phải là số nguyên") from exc
 
     worksheet = get_worksheet()
-    assets = read_website_assets(get_worksheet("Bài viết"))
+    asset_worksheet = get_worksheet("Bài viết")
+    assets = read_website_assets(asset_worksheet)
     rows = read_website_sales_rows(worksheet, assets)
     if limit is not None:
         rows = rows[:limit]
@@ -60,6 +62,7 @@ async def run(*, limit: int | None = None) -> None:
         print("Không có dòng nào cần tạo quảng cáo Website.")
         return
 
+    result_writer = WebsiteResultWriter(asset_worksheet)
     failures = 0
     accounts: dict[str, object] = {}
     async with TelegramDownloader(
@@ -80,6 +83,7 @@ async def run(*, limit: int | None = None) -> None:
                         row.telegram_link, Path(temp_dir)
                     )
                     video_id = upload_video(account, str(video_path))
+                    result_writer.write_upload(row.group_ad_name, video_id)
                     thumbnail_url = wait_for_video_thumbnail(video_id)
 
                 targeting = {
@@ -98,6 +102,7 @@ async def run(*, limit: int | None = None) -> None:
                 campaign_ids: list[str] = []
                 adset_ids: list[str] = []
                 ad_ids: list[str] = []
+                post_results: list[tuple[str, str]] = []
                 for campaign_index in range(1, row.campaign_count + 1):
                     campaign = create_campaign(
                         account,
@@ -165,6 +170,8 @@ async def run(*, limit: int | None = None) -> None:
                                 status="ACTIVE",
                             )
                             ad_ids.append(ad["id"])
+                            post_results.append(read_post_once(str(creative["id"])))
+                            result_writer.write_posts(row.group_ad_name, post_results)
                         ads_before += ads_in_adset
                 message = (
                     f"Thành công Website {row.campaign_count}-"
