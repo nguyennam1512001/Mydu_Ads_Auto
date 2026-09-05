@@ -1,0 +1,70 @@
+name: 🔟 Lấy Preview image
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Số dòng tối đa; để trống = tất cả"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mydu-preview-image-only
+  cancel-in-progress: false
+
+jobs:
+  preview_image:
+    name: Lấy Preview image từ Telegram
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_SHEET_TAB: "Bài viết"
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: preview_image/requirements.txt
+
+      - name: Cài thư viện
+        run: pip install --disable-pip-version-check -r preview_image/requirements.txt
+
+      - name: Lấy thumbnail từ Telegram
+        shell: bash
+        run: |
+          args=()
+          if [[ -n "${{ inputs.limit }}" ]]; then
+            args+=(--limit "${{ inputs.limit }}")
+          fi
+          python preview_image/run.py download "${args[@]}"
+
+      - name: Lưu ảnh preview vào repository
+        id: save_images
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add preview_images/
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Không có ảnh mới cần commit."
+          else
+            git commit -m "Add Telegram preview images"
+            git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ghi Preview_Image vào Google Sheet
+        run: python preview_image/run.py apply
