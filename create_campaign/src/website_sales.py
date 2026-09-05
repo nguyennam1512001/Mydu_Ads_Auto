@@ -113,7 +113,7 @@ async def run(*, limit: int | None = None) -> None:
                             row.campaign_count,
                         ),
                         objective="OUTCOME_SALES",
-                        status="PAUSED",
+                        status="ACTIVE",
                         daily_budget=row.daily_budget,
                         bid_strategy="LOWEST_COST_WITHOUT_CAP",
                         special_ad_categories=[],
