@@ -9,7 +9,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mydu-preview-image-only
@@ -24,6 +24,7 @@ jobs:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       GOOGLE_SHEET_TAB: "Bài viết"
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      GOOGLE_DRIVE_PREVIEW_FOLDER_ID: "1BmaIqYaxcbGUyYr1tNaBPmkRhUuMvfRP"
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
       TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
@@ -41,7 +42,7 @@ jobs:
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r preview_image/requirements.txt
 
-      - name: Lấy thumbnail từ Telegram
+      - name: Lấy thumbnail và upload lên Google Drive
         shell: bash
         run: |
           args=()
@@ -49,23 +50,6 @@ jobs:
             args+=(--limit "${{ inputs.limit }}")
           fi
           python preview_image/run.py download "${args[@]}"
-
-      - name: Lưu ảnh preview vào repository
-        shell: bash
-        run: |
-          if [[ ! -d preview_images ]]; then
-            echo "Không có ảnh mới cần lưu."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add preview_images/
-          if git diff --cached --quiet; then
-            echo "Không có ảnh mới cần commit."
-          else
-            git commit -m "Add Telegram preview images"
-            git push
-          fi
 
       - name: Ghi Preview_Image vào Google Sheet
         run: python preview_image/run.py apply
