@@ -4,7 +4,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -165,6 +165,10 @@ class FacebookPagePublisher:
     @staticmethod
     def _video_id_from_permalink(permalink_url: str) -> str:
         parsed = urlparse((permalink_url or "").strip())
+        query = parse_qs(parsed.query)
+        watch_id = query.get("v", [""])[0]
+        if parsed.path.rstrip("/") in {"/watch", "/video.php"} and watch_id.isdigit():
+            return watch_id
         path = parsed.path if parsed.scheme else permalink_url
         parts = [part for part in path.split("/") if part]
         for marker in ("reel", "videos"):
@@ -174,6 +178,49 @@ class FacebookPagePublisher:
                     return parts[index]
         raise ValueError(
             "Post Link phải có dạng facebook.com/reel/ID hoặc facebook.com/.../videos/ID"
+        )
+
+    def recover_video_reference(self, page_id: str, post_id: str, post_link: str) -> PublishedPost:
+        """Resolve an existing video reference without publishing anything."""
+        if post_link:
+            try:
+                video_id = self._video_id_from_permalink(post_link)
+                return PublishedPost(video_id, post_id, post_link)
+            except ValueError:
+                pass
+        story_id = post_id
+        if not story_id and post_link:
+            parsed = urlparse(post_link)
+            story_id = parse_qs(parsed.query).get("story_fbid", [""])[0]
+            parts = [part for part in parsed.path.split("/") if part]
+            if not story_id and "posts" in parts:
+                index = parts.index("posts") + 1
+                if index < len(parts):
+                    story_id = parts[index]
+        if not story_id:
+            raise ValueError("Không xác định được video/bài viết từ Post Link; cần POST_ID hoặc FB_UPLOAD_ID")
+        if "_" not in story_id:
+            story_id = f"{page_id}_{story_id}"
+        response = self.http.get(
+            f"{self.base_url}/{story_id}",
+            params={
+                "fields": "id,object_id,type,permalink_url",
+                "access_token": self._page_token(page_id),
+            },
+            timeout=60,
+        )
+        payload = self._raise_for_graph(response)
+        video_id = str(payload.get("object_id") or "") if payload.get("type") == "video" else ""
+        link = post_link or str(payload.get("permalink_url") or "")
+        if link.startswith("/"):
+            link = f"https://www.facebook.com{link}"
+        if not video_id and link:
+            try:
+                video_id = self._video_id_from_permalink(link)
+            except ValueError:
+                pass
+        return PublishedPost(
+            video_id, post_id or str(payload.get("id") or story_id).rsplit("_", 1)[-1], link,
         )
 
     def recover_post_id(
@@ -207,4 +254,3 @@ class FacebookPagePublisher:
             "Hết thời gian lấy POST_ID từ Post Link. "
             f"Trạng thái cuối: {last_status}"
         )
-
