@@ -111,16 +111,17 @@ class SheetRepository:
             telegram_link = self._cell(row, columns[COL_TELEGRAM_LINK])
             post_id = self._cell(row, columns[COL_POST_ID])
             post_link = self._cell(row, columns[COL_POST_LINK])
+            video_id = self._cell(row, columns[COL_VIDEO_ID])
 
-            if not any([page_id, text_content, telegram_link, post_link]):
+            if not any([page_id, text_content, telegram_link, post_link, video_id, post_id]):
                 continue
-            if post_link:
-                if post_id:
-                    continue
+            if post_link and post_id and video_id:
+                continue
+            if video_id or post_link or post_id:
                 if not page_id:
                     self.update(
                         row_number,
-                        **{COL_STATUS: "Lỗi: thiếu PAGE_ID để lấy POST_ID từ Post Link"},
+                        **{COL_STATUS: "Lỗi: thiếu PAGE_ID để lấy thông tin bài viết"},
                     )
                     continue
             elif not all([page_id, text_content, telegram_link]):
@@ -140,7 +141,7 @@ class SheetRepository:
                 description=self._cell(row, columns[COL_TITLE]),
                 text_content=text_content,
                 telegram_link=telegram_link,
-                video_id=self._cell(row, columns[COL_VIDEO_ID]),
+                video_id=video_id,
                 post_id=post_id,
                 post_link=post_link,
             ))
