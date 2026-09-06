@@ -8,6 +8,15 @@ on:
         required: true
         default: "6/9/2026"
         type: string
+      codes:
+        description: "Danh sách mã cần quét; có thể xuống dòng, cách nhau bằng dấu phẩy hoặc khoảng trắng"
+        required: false
+        type: string
+      latest_per_code:
+        description: "Số video mới nhất cần lấy cho mỗi mã; để trống = lấy tất cả"
+        required: false
+        default: "3"
+        type: string
 
 concurrency:
   group: mydu-telegram-video-inventory
@@ -25,6 +34,8 @@ jobs:
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
       TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+      TARGET_CODES: ${{ inputs.codes }}
+      LATEST_PER_CODE: ${{ inputs.latest_per_code }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -40,4 +51,12 @@ jobs:
         run: pip install --disable-pip-version-check -r telegram_video_inventory/requirements.txt
 
       - name: Quét nhóm và kênh Telegram
-        run: python telegram_video_inventory/run.py --start-date "${{ inputs.start_date }}"
+        run: |
+          args=(--start-date "${{ inputs.start_date }}")
+          if [[ -n "$TARGET_CODES" ]]; then
+            args+=(--codes "$TARGET_CODES")
+          fi
+          if [[ -n "$LATEST_PER_CODE" ]]; then
+            args+=(--latest-per-code "$LATEST_PER_CODE")
+          fi
+          python telegram_video_inventory/run.py "${args[@]}"
