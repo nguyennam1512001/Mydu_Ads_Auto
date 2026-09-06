@@ -18,7 +18,7 @@ templates:
             title: "Tư vấn size cho chị!"
             payload: "TU_VAN_SIZE"
 
-"MDU by Linda Duong":
+  "MDU by Linda Duong":
   - message:
       text: "Linda Duong xin chào! Váy, Đầm thiết kế cao cấp Linda Duong có đủ size S, M, L, XL, XXL !"
       quick_replies:
