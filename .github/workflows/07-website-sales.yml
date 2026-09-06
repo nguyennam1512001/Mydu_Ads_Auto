@@ -41,6 +41,22 @@ jobs:
           cache-dependency-path: create_campaign/requirements.txt
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r requirements.txt
+      - name: Cho phép trùng Mã trong tab Bài viết
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/sheet_client.py")
+          text = path.read_text(encoding="utf-8")
+          old = '''        if code in assets:\n            raise ValueError(\n                f"Mã '{code}' bị trùng trong tab '{worksheet.title}' "\n                f"(phát hiện tại hàng {row_number})"\n            )\n'''
+          if old in text:
+              text = text.replace(old, "", 1)
+              path.write_text(text, encoding="utf-8")
+              print("Đã bỏ kiểm tra trùng Mã cho Workflow 7.")
+          else:
+              print("Không tìm thấy block kiểm tra trùng Mã; tiếp tục chạy.")
+          PY
       - name: Tạo quảng cáo doanh số Website
         shell: bash
         run: |
