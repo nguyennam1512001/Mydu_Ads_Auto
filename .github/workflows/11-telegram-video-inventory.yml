@@ -3,9 +3,10 @@ name: 1️⃣1️⃣ Quét kho link video Telegram
 on:
   workflow_dispatch:
     inputs:
-      max_messages_per_chat:
-        description: "Giới hạn số tin nhắn quét mỗi nhóm/kênh; để trống = toàn bộ lịch sử"
-        required: false
+      start_date:
+        description: "Quét video từ ngày này trở đi, định dạng d/m/yyyy (ví dụ 6/9/2026)"
+        required: true
+        default: "6/9/2026"
         type: string
 
 concurrency:
@@ -39,10 +40,4 @@ jobs:
         run: pip install --disable-pip-version-check -r telegram_video_inventory/requirements.txt
 
       - name: Quét nhóm và kênh Telegram
-        shell: bash
-        run: |
-          args=()
-          if [[ -n "${{ inputs.max_messages_per_chat }}" ]]; then
-            args+=(--max-messages-per-chat "${{ inputs.max_messages_per_chat }}")
-          fi
-          python telegram_video_inventory/run.py "${args[@]}"
+        run: python telegram_video_inventory/run.py --start-date "${{ inputs.start_date }}"
