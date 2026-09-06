@@ -20,12 +20,11 @@ from src.creative import (
 from src.fb_client import get_ad_account, init_api
 from src.sheet_client import (
     get_worksheet,
-    read_website_assets,
-    read_website_sales_rows,
     write_result,
 )
 from src.telegram_client import TelegramDownloader
 from src.website_results import WebsiteResultWriter, read_post_once
+from src.website_sheet_by_row import read_website_sales_rows_by_row
 
 
 def numbered_name(base: str, label: str, index: int, total: int) -> str:
@@ -54,8 +53,7 @@ async def run(*, limit: int | None = None) -> None:
 
     worksheet = get_worksheet()
     asset_worksheet = get_worksheet("Bài viết")
-    assets = read_website_assets(asset_worksheet)
-    rows = read_website_sales_rows(worksheet, assets)
+    rows = read_website_sales_rows_by_row(worksheet, asset_worksheet)
     if limit is not None:
         rows = rows[:limit]
     if not rows:
