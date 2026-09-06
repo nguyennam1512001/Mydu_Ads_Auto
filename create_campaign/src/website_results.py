@@ -35,7 +35,7 @@ def read_post_once(creative_id: str) -> tuple[str, str]:
 
 
 class WebsiteResultWriter:
-    """Write to the unique Mã row in Bài viết, using existing column headers."""
+    """Ghi kết quả Website vào đúng số hàng tương ứng trong tab Bài viết."""
 
     def __init__(self, worksheet):
         self.worksheet = worksheet
@@ -43,32 +43,24 @@ class WebsiteResultWriter:
         headers = _build_header_map(values[0] if values else [])
         self.columns = {
             name: _col_to_index(headers, name) + 1
-            for name in ["Mã", "FB_UPLOAD_ID", "POST_ID", "Post Link"]
+            for name in ["FB_UPLOAD_ID", "POST_ID", "Post Link"]
         }
-        self.rows = {}
-        code_index = self.columns["Mã"] - 1
-        for number, values_row in enumerate(values[1:], start=2):
-            code = values_row[code_index].strip() if code_index < len(values_row) else ""
-            if code:
-                if code in self.rows:
-                    raise ValueError(f"Mã '{code}' bị trùng trong tab Bài viết")
-                self.rows[code] = number
 
-    def _write(self, code: str, values: dict[str, str]) -> None:
+    def _write(self, row_number: int, values: dict[str, str]) -> None:
         from gspread.utils import rowcol_to_a1
 
-        if code not in self.rows:
-            raise ValueError(f"Không tìm thấy Mã '{code}' trong tab Bài viết")
+        if row_number < 2:
+            raise ValueError(f"Số hàng không hợp lệ trong tab Bài viết: {row_number}")
         self.worksheet.batch_update([
-            {"range": rowcol_to_a1(self.rows[code], self.columns[name]), "values": [[value]]}
+            {"range": rowcol_to_a1(row_number, self.columns[name]), "values": [[value]]}
             for name, value in values.items()
         ], value_input_option="RAW")
 
-    def write_upload(self, code: str, video_id: str) -> None:
+    def write_upload(self, row_number: int, video_id: str) -> None:
         # Old post references belong to the previous upload, not this new video.
-        self._write(code, {"FB_UPLOAD_ID": video_id, "POST_ID": "", "Post Link": ""})
+        self._write(row_number, {"FB_UPLOAD_ID": video_id, "POST_ID": "", "Post Link": ""})
 
-    def write_posts(self, code: str, results: list[tuple[str, str]]) -> None:
+    def write_posts(self, row_number: int, results: list[tuple[str, str]]) -> None:
         def cell(index: int) -> str:
             values = [result[index] for result in results]
             if not any(values):
@@ -77,4 +69,4 @@ class WebsiteResultWriter:
                 return values[0]
             return json.dumps([value or None for value in values], ensure_ascii=False)
 
-        self._write(code, {"POST_ID": cell(0), "Post Link": cell(1)})
+        self._write(row_number, {"POST_ID": cell(0), "Post Link": cell(1)})
