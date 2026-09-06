@@ -11,7 +11,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import gspread
-from google.oauth2.service_account import Credentials
+from google.oauth2.credentials import Credentials as UserCredentials
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from telethon import TelegramClient
@@ -21,10 +22,11 @@ from telethon.sessions import StringSession
 HEADER_ROW = 1
 COL_TELEGRAM_LINK = "Telegram_video_link"
 COL_PREVIEW_IMAGE = "Preview_Image"
-SCOPES = [
+SHEET_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 PRIVATE_LINK = re.compile(r"^/c/(?P<channel>\d+)/(?P<message>\d+)/?$")
 PUBLIC_LINK = re.compile(r"^/(?P<username>[A-Za-z][A-Za-z0-9_]{3,})/(?P<message>\d+)/?$")
 
@@ -40,16 +42,40 @@ def required_env(name: str) -> str:
     return value
 
 
-def google_credentials() -> Credentials:
+def google_credentials() -> ServiceAccountCredentials:
     credentials_json = required_env("GOOGLE_CREDENTIALS")
     try:
         info = json.loads(credentials_json)
     except json.JSONDecodeError as exc:
         raise ValueError(f"GOOGLE_CREDENTIALS không phải JSON hợp lệ: {exc}") from exc
-    return Credentials.from_service_account_info(info, scopes=SCOPES)
+    return ServiceAccountCredentials.from_service_account_info(info, scopes=SHEET_SCOPES)
 
 
-def worksheet(creds: Credentials | None = None):
+def google_drive_credentials() -> UserCredentials:
+    oauth_json = required_env("OAuth_Google")
+    try:
+        info = json.loads(oauth_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"OAuth_Google không phải JSON hợp lệ: {exc}") from exc
+
+    required_fields = ("client_id", "client_secret", "refresh_token")
+    missing = [field for field in required_fields if not str(info.get(field, "")).strip()]
+    if missing:
+        raise ValueError(
+            "OAuth_Google thiếu trường bắt buộc: " + ", ".join(missing)
+        )
+
+    return UserCredentials(
+        token=None,
+        refresh_token=str(info["refresh_token"]).strip(),
+        token_uri=str(info.get("token_uri") or "https://oauth2.googleapis.com/token").strip(),
+        client_id=str(info["client_id"]).strip(),
+        client_secret=str(info["client_secret"]).strip(),
+        scopes=DRIVE_SCOPES,
+    )
+
+
+def worksheet(creds: ServiceAccountCredentials | None = None):
     sheet_id = required_env("GOOGLE_SHEET_ID")
     tab_name = os.getenv("GOOGLE_SHEET_TAB", "Bài viết")
     creds = creds or google_credentials()
@@ -143,8 +169,8 @@ def upload_to_drive(drive, folder_id: str, path: Path) -> str:
 
 
 async def download_previews(limit: int | None, output: Path) -> None:
-    creds = google_credentials()
-    ws = worksheet(creds)
+    sheet_creds = google_credentials()
+    ws = worksheet(sheet_creds)
     values = ws.get_all_values()
     if not values:
         raise ValueError("Tab Bài viết đang trống")
@@ -192,7 +218,8 @@ async def download_previews(limit: int | None, output: Path) -> None:
     temp_dir = Path("preview_temp")
     temp_dir.mkdir(parents=True, exist_ok=True)
     updates: list[dict[str, object]] = []
-    drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+    drive_creds = google_drive_credentials()
+    drive = build("drive", "v3", credentials=drive_creds, cache_discovery=False)
 
     client = TelegramClient(StringSession(session), api_id, api_hash)
     await client.connect()
