@@ -148,7 +148,7 @@ def append_found(ws, found: list[FoundVideo]) -> None:
 
     headers, header_map = get_header_map(ws)
     code_idx = header_map[normalize_header(COL_CODE)]
-    link_idx = header_map[normalize_header(COL_TEGRAM_LINK)] if False else header_map[normalize_header(COL_TELEGRAM_LINK)]
+    link_idx = header_map[normalize_header(COL_TELEGRAM_LINK)]
     date_idx = header_map[normalize_header(COL_UPLOAD_DATE)]
 
     rows: list[list[str]] = []
