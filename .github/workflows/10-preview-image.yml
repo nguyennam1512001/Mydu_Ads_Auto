@@ -24,6 +24,7 @@ jobs:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       GOOGLE_SHEET_TAB: "Bài viết"
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      OAuth_Google: ${{ secrets.OAuth_Google }}
       GOOGLE_DRIVE_PREVIEW_FOLDER_ID: "1BmaIqYaxcbGUyYr1tNaBPmkRhUuMvfRP"
       TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
