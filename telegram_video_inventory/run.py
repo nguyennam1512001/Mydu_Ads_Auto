@@ -7,6 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -18,8 +19,10 @@ from telethon.tl.types import Channel
 HEADER_ROW = 1
 COL_CODE = "Mã"
 COL_TELEGRAM_LINK = "Telegram_video_link"
+COL_UPLOAD_DATE = "Ngày up video lên tele"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 CODE_PATTERN = re.compile(r"(?i)(?<![A-Za-z0-9])([A-Za-z]+[0-9]{3,})(?![A-Za-z0-9])")
+VN_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 
 
 @dataclass(frozen=True)
@@ -57,7 +60,7 @@ def parse_start_date(value: str) -> datetime:
         parsed = datetime.strptime(value.strip(), "%d/%m/%Y")
     except ValueError as exc:
         raise ValueError("Ngày phải có định dạng d/m/yyyy, ví dụ 6/9/2026") from exc
-    return parsed.replace(tzinfo=timezone.utc)
+    return parsed.replace(tzinfo=VN_TZ).astimezone(timezone.utc)
 
 
 def parse_codes(value: str | None) -> set[str] | None:
@@ -102,26 +105,32 @@ def message_link(entity: object, message_id: int) -> str | None:
     return None
 
 
-def existing_links(ws) -> set[str]:
-    values = ws.get_all_values()
-    if not values:
-        raise ValueError("Tab Kho link video tele đang trống, cần có hàng tiêu đề ở hàng 1")
-
-    headers = values[HEADER_ROW - 1]
+def get_header_map(ws) -> tuple[list[str], dict[str, int]]:
+    headers = ws.row_values(HEADER_ROW)
+    if not headers:
+        raise ValueError("Tab Kho link video tele cần có hàng tiêu đề ở hàng 1")
     header_map = {
         normalize_header(value): index
         for index, value in enumerate(headers)
         if normalize_header(value)
     }
-    code_idx = header_map.get(normalize_header(COL_CODE))
-    link_idx = header_map.get(normalize_header(COL_TELEGRAM_LINK))
-    missing = []
-    if code_idx is None:
-        missing.append(COL_CODE)
-    if link_idx is None:
-        missing.append(COL_TELEGRAM_LINK)
+    missing = [
+        name
+        for name in (COL_CODE, COL_TELEGRAM_LINK, COL_UPLOAD_DATE)
+        if normalize_header(name) not in header_map
+    ]
     if missing:
         raise ValueError(f"Sheet thiếu cột bắt buộc ở hàng 1: {', '.join(missing)}")
+    return headers, header_map
+
+
+def existing_links(ws) -> set[str]:
+    values = ws.get_all_values()
+    if not values:
+        raise ValueError("Tab Kho link video tele đang trống, cần có hàng tiêu đề ở hàng 1")
+
+    _, header_map = get_header_map(ws)
+    link_idx = header_map[normalize_header(COL_TELEGRAM_LINK)]
 
     links: set[str] = set()
     for row in values[HEADER_ROW:]:
@@ -137,14 +146,10 @@ def append_found(ws, found: list[FoundVideo]) -> None:
         print("Không có video mới cần ghi.")
         return
 
-    headers = ws.row_values(HEADER_ROW)
-    header_map = {
-        normalize_header(value): index
-        for index, value in enumerate(headers)
-        if normalize_header(value)
-    }
+    headers, header_map = get_header_map(ws)
     code_idx = header_map[normalize_header(COL_CODE)]
-    link_idx = header_map[normalize_header(COL_TELEGRAM_LINK)]
+    link_idx = header_map[normalize_header(COL_TEGRAM_LINK)] if False else header_map[normalize_header(COL_TELEGRAM_LINK)]
+    date_idx = header_map[normalize_header(COL_UPLOAD_DATE)]
 
     rows: list[list[str]] = []
     width = len(headers)
@@ -152,9 +157,10 @@ def append_found(ws, found: list[FoundVideo]) -> None:
         row = [""] * width
         row[code_idx] = item.code
         row[link_idx] = item.link
+        row[date_idx] = item.date.astimezone(VN_TZ).strftime("%d/%m/%Y")
         rows.append(row)
 
-    ws.append_rows(rows, value_input_option="RAW", insert_data_option="INSERT_ROWS")
+    ws.append_rows(rows, value_input_option="USER_ENTERED", insert_data_option="INSERT_ROWS")
     print(f"Đã ghi {len(rows)} video mới vào tab Kho link video tele.")
 
 
@@ -250,12 +256,13 @@ async def scan(
 
         selected = select_latest_per_code(found, target_codes, latest_per_code)
         for item in selected:
-            print(f"  + {item.code}: {item.link} ({item.date.strftime('%d/%m/%Y %H:%M')})")
+            local_date = item.date.astimezone(VN_TZ)
+            print(f"  + {item.code}: {item.link} ({local_date.strftime('%d/%m/%Y %H:%M')})")
 
         append_found(ws, selected)
         print(
             f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn từ "
-            f"{start_date.strftime('%d/%m/%Y')}, tìm {len(found)} video mới phù hợp, "
+            f"{start_date.astimezone(VN_TZ).strftime('%d/%m/%Y')}, tìm {len(found)} video mới phù hợp, "
             f"ghi {len(selected)} video vào Sheet."
         )
     finally:
@@ -264,7 +271,7 @@ async def scan(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Quét nhóm/kênh Telegram, lấy mã video và link chưa có trong Google Sheet"
+        description="Quét nhóm/kênh Telegram, lấy mã video, ngày up và link chưa có trong Google Sheet"
     )
     parser.add_argument(
         "--start-date",
