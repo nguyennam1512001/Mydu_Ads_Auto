@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import gspread
 from google.oauth2.service_account import Credentials
@@ -48,6 +49,14 @@ def get_worksheet():
         raise ValueError(f"GOOGLE_CREDENTIALS không phải JSON hợp lệ: {exc}") from exc
     creds = Credentials.from_service_account_info(info, scopes=SCOPES)
     return gspread.authorize(creds).open_by_key(sheet_id).worksheet(tab_name)
+
+
+def parse_start_date(value: str) -> datetime:
+    try:
+        parsed = datetime.strptime(value.strip(), "%d/%m/%Y")
+    except ValueError as exc:
+        raise ValueError("Ngày phải có định dạng d/m/yyyy, ví dụ 6/9/2026") from exc
+    return parsed.replace(tzinfo=timezone.utc)
 
 
 def extract_code(filename: str | None) -> str | None:
@@ -127,7 +136,7 @@ def append_found(ws, found: list[FoundVideo]) -> None:
     print(f"Đã ghi {len(rows)} video mới vào tab Kho link video tele.")
 
 
-async def scan(*, max_messages_per_chat: int | None = None) -> None:
+async def scan(*, start_date: datetime) -> None:
     ws = get_worksheet()
     known_links = existing_links(ws)
 
@@ -158,13 +167,14 @@ async def scan(*, max_messages_per_chat: int | None = None) -> None:
             entity = dialog.entity
             print(f"Đang quét: {dialog.name}")
 
-            count = 0
             async for message in client.iter_messages(entity):
-                if max_messages_per_chat is not None and count >= max_messages_per_chat:
+                message_date = message.date
+                if message_date is None:
+                    continue
+                if message_date < start_date:
                     break
-                count += 1
-                scanned_messages += 1
 
+                scanned_messages += 1
                 if not message.media:
                     continue
                 filename = getattr(message.file, "name", None) if message.file else None
@@ -185,8 +195,8 @@ async def scan(*, max_messages_per_chat: int | None = None) -> None:
 
         append_found(ws, found)
         print(
-            f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn, "
-            f"tìm {len(found)} video mới."
+            f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn từ "
+            f"{start_date.strftime('%d/%m/%Y')}, tìm {len(found)} video mới."
         )
     finally:
         await client.disconnect()
@@ -197,15 +207,12 @@ def main() -> None:
         description="Quét nhóm/kênh Telegram, lấy mã video và link chưa có trong Google Sheet"
     )
     parser.add_argument(
-        "--max-messages-per-chat",
-        type=int,
-        default=None,
-        help="Giới hạn số tin nhắn quét mỗi nhóm/kênh; để trống = quét toàn bộ lịch sử",
+        "--start-date",
+        required=True,
+        help="Chỉ quét tin nhắn từ ngày này trở đi, định dạng d/m/yyyy; ví dụ 6/9/2026",
     )
     args = parser.parse_args()
-    if args.max_messages_per_chat is not None and args.max_messages_per_chat <= 0:
-        raise ValueError("--max-messages-per-chat phải lớn hơn 0")
-    asyncio.run(scan(max_messages_per_chat=args.max_messages_per_chat))
+    asyncio.run(scan(start_date=parse_start_date(args.start_date)))
 
 
 if __name__ == "__main__":
