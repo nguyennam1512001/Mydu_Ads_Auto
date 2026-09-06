@@ -55,7 +55,9 @@ def get_worksheet():
     return gspread.authorize(creds).open_by_key(sheet_id).worksheet(tab_name)
 
 
-def parse_start_date(value: str) -> datetime:
+def parse_start_date(value: str | None) -> datetime | None:
+    if not value or not value.strip():
+        return None
     try:
         parsed = datetime.strptime(value.strip(), "%d/%m/%Y")
     except ValueError as exc:
@@ -188,7 +190,7 @@ def select_latest_per_code(
 
 async def scan(
     *,
-    start_date: datetime,
+    start_date: datetime | None,
     target_codes: set[str] | None,
     latest_per_code: int | None,
 ) -> None:
@@ -215,6 +217,11 @@ async def scan(
         scanned_chats = 0
         scanned_messages = 0
 
+        if start_date is None:
+            print("Không giới hạn ngày: quét toàn bộ lịch sử khả dụng.")
+        else:
+            print(f"Chỉ quét từ ngày {start_date.astimezone(VN_TZ).strftime('%d/%m/%Y')} trở đi.")
+
         if target_codes:
             print("Chỉ quét các mã: " + ", ".join(sorted(target_codes)))
         else:
@@ -231,7 +238,7 @@ async def scan(
                 message_date = message.date
                 if message_date is None:
                     continue
-                if message_date < start_date:
+                if start_date is not None and message_date < start_date:
                     break
 
                 scanned_messages += 1
@@ -260,10 +267,14 @@ async def scan(
             print(f"  + {item.code}: {item.link} ({local_date.strftime('%d/%m/%Y %H:%M')})")
 
         append_found(ws, selected)
+        date_summary = (
+            f"từ {start_date.astimezone(VN_TZ).strftime('%d/%m/%Y')}"
+            if start_date is not None
+            else "không giới hạn ngày"
+        )
         print(
-            f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn từ "
-            f"{start_date.astimezone(VN_TZ).strftime('%d/%m/%Y')}, tìm {len(found)} video mới phù hợp, "
-            f"ghi {len(selected)} video vào Sheet."
+            f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn {date_summary}, "
+            f"tìm {len(found)} video mới phù hợp, ghi {len(selected)} video vào Sheet."
         )
     finally:
         await client.disconnect()
@@ -275,8 +286,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--start-date",
-        required=True,
-        help="Chỉ quét tin nhắn từ ngày này trở đi, định dạng d/m/yyyy; ví dụ 6/9/2026",
+        default="",
+        help="Chỉ quét tin nhắn từ ngày này trở đi, định dạng d/m/yyyy; để trống = không giới hạn ngày",
     )
     parser.add_argument(
         "--codes",
