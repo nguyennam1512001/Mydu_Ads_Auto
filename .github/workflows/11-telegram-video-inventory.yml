@@ -14,7 +14,6 @@ on:
       latest_per_code:
         description: "Số video mới nhất cần lấy cho mỗi mã; để trống = lấy tất cả"
         required: false
-        default: "3"
         type: string
 
 concurrency:
