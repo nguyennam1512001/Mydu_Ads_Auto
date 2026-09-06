@@ -81,7 +81,7 @@ async def run(*, limit: int | None = None) -> None:
                         row.telegram_link, Path(temp_dir)
                     )
                     video_id = upload_video(account, str(video_path))
-                    result_writer.write_upload(row.group_ad_name, video_id)
+                    result_writer.write_upload(row.row_number, video_id)
                     thumbnail_url = wait_for_video_thumbnail(video_id)
 
                 targeting = {
@@ -169,7 +169,7 @@ async def run(*, limit: int | None = None) -> None:
                             )
                             ad_ids.append(ad["id"])
                             post_results.append(read_post_once(str(creative["id"])))
-                            result_writer.write_posts(row.group_ad_name, post_results)
+                            result_writer.write_posts(row.row_number, post_results)
                         ads_before += ads_in_adset
                 message = (
                     f"Thành công Website {row.campaign_count}-"
