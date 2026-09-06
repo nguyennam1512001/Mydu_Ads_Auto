@@ -26,6 +26,7 @@ CODE_PATTERN = re.compile(r"(?i)(?<![A-Za-z0-9])([A-Za-z]+[0-9]{3,})(?![A-Za-z0-
 class FoundVideo:
     code: str
     link: str
+    date: datetime
 
 
 def required_env(name: str) -> str:
@@ -57,6 +58,27 @@ def parse_start_date(value: str) -> datetime:
     except ValueError as exc:
         raise ValueError("Ngày phải có định dạng d/m/yyyy, ví dụ 6/9/2026") from exc
     return parsed.replace(tzinfo=timezone.utc)
+
+
+def parse_codes(value: str | None) -> set[str] | None:
+    if not value or not value.strip():
+        return None
+    parts = re.split(r"[\s,;]+", value.strip())
+    codes: set[str] = set()
+    invalid: list[str] = []
+    for raw in parts:
+        if not raw:
+            continue
+        code = raw.upper()
+        if not re.fullmatch(r"[A-Z]+[0-9]{3,}", code):
+            invalid.append(raw)
+            continue
+        codes.add(code)
+    if invalid:
+        raise ValueError(
+            "Mã không hợp lệ: " + ", ".join(invalid) + ". Mã phải là chữ + ít nhất 3 chữ số, ví dụ MDU4382."
+        )
+    return codes or None
 
 
 def extract_code(filename: str | None) -> str | None:
@@ -136,7 +158,34 @@ def append_found(ws, found: list[FoundVideo]) -> None:
     print(f"Đã ghi {len(rows)} video mới vào tab Kho link video tele.")
 
 
-async def scan(*, start_date: datetime) -> None:
+def select_latest_per_code(
+    found: list[FoundVideo],
+    target_codes: set[str] | None,
+    latest_per_code: int | None,
+) -> list[FoundVideo]:
+    if latest_per_code is None:
+        return sorted(found, key=lambda item: item.date, reverse=True)
+
+    grouped: dict[str, list[FoundVideo]] = {}
+    for item in found:
+        grouped.setdefault(item.code, []).append(item)
+
+    selected: list[FoundVideo] = []
+    codes_to_process = sorted(target_codes) if target_codes else sorted(grouped)
+    for code in codes_to_process:
+        items = sorted(grouped.get(code, []), key=lambda item: item.date, reverse=True)
+        selected.extend(items[:latest_per_code])
+        print(f"Mã {code}: lấy {min(len(items), latest_per_code)}/{latest_per_code} video mới nhất chưa có trong Sheet.")
+
+    return sorted(selected, key=lambda item: (item.code, item.date), reverse=True)
+
+
+async def scan(
+    *,
+    start_date: datetime,
+    target_codes: set[str] | None,
+    latest_per_code: int | None,
+) -> None:
     ws = get_worksheet()
     known_links = existing_links(ws)
 
@@ -159,6 +208,11 @@ async def scan(*, start_date: datetime) -> None:
         seen_this_run = set(known_links)
         scanned_chats = 0
         scanned_messages = 0
+
+        if target_codes:
+            print("Chỉ quét các mã: " + ", ".join(sorted(target_codes)))
+        else:
+            print("Không nhập danh sách mã: quét tất cả mã hợp lệ.")
 
         async for dialog in client.iter_dialogs():
             if not (dialog.is_group or dialog.is_channel):
@@ -184,19 +238,25 @@ async def scan(*, start_date: datetime) -> None:
                 code = extract_code(filename)
                 if not code:
                     continue
+                if target_codes is not None and code not in target_codes:
+                    continue
 
                 link = message_link(entity, message.id)
                 if not link or link in seen_this_run:
                     continue
 
-                found.append(FoundVideo(code=code, link=link))
+                found.append(FoundVideo(code=code, link=link, date=message_date))
                 seen_this_run.add(link)
-                print(f"  + {code}: {link}")
 
-        append_found(ws, found)
+        selected = select_latest_per_code(found, target_codes, latest_per_code)
+        for item in selected:
+            print(f"  + {item.code}: {item.link} ({item.date.strftime('%d/%m/%Y %H:%M')})")
+
+        append_found(ws, selected)
         print(
             f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn từ "
-            f"{start_date.strftime('%d/%m/%Y')}, tìm {len(found)} video mới."
+            f"{start_date.strftime('%d/%m/%Y')}, tìm {len(found)} video mới phù hợp, "
+            f"ghi {len(selected)} video vào Sheet."
         )
     finally:
         await client.disconnect()
@@ -211,8 +271,28 @@ def main() -> None:
         required=True,
         help="Chỉ quét tin nhắn từ ngày này trở đi, định dạng d/m/yyyy; ví dụ 6/9/2026",
     )
+    parser.add_argument(
+        "--codes",
+        default="",
+        help="Danh sách mã cần quét; có thể xuống dòng, phân tách bằng dấu phẩy, chấm phẩy hoặc khoảng trắng",
+    )
+    parser.add_argument(
+        "--latest-per-code",
+        type=int,
+        default=None,
+        help="Chỉ lấy N video mới nhất chưa có trong Sheet cho mỗi mã",
+    )
     args = parser.parse_args()
-    asyncio.run(scan(start_date=parse_start_date(args.start_date)))
+    if args.latest_per_code is not None and args.latest_per_code <= 0:
+        raise ValueError("--latest-per-code phải lớn hơn 0")
+
+    asyncio.run(
+        scan(
+            start_date=parse_start_date(args.start_date),
+            target_codes=parse_codes(args.codes),
+            latest_per_code=args.latest_per_code,
+        )
+    )
 
 
 if __name__ == "__main__":
