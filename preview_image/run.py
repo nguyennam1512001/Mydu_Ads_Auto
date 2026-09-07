@@ -213,6 +213,10 @@ def write_preview_text(ws, row_number: int, preview_col: int, text: str) -> None
     batch_write_previews(ws, [text_request(row_number, preview_col, text)])
 
 
+def write_preview_text_direct(ws, row_number: int, preview_col: int, text: str) -> None:
+    ws.update_cell(row_number, preview_col, text)
+
+
 def find_drive_file(drive, folder_id: str, filename: str) -> str | None:
     safe_name = filename.replace("'", "\\'")
     query = (
@@ -385,7 +389,18 @@ async def download_new_previews(limit: int | None) -> None:
                         no_thumbnail += 1
                         print(f"Dòng {row_number}: không có thumbnail -> đã ghi vào Preview")
                     except Exception as write_exc:
-                        print(f"LỖI ghi trạng thái dòng {row_number}: {write_exc}")
+                        if "Unable to parse range" in str(write_exc):
+                            try:
+                                write_preview_text_direct(ws, row_number, preview_col, "ko có thumbnail")
+                                no_thumbnail += 1
+                                print(
+                                    f"Dòng {row_number}: lỗi parse range khi ghi trạng thái "
+                                    "-> đã ghi trực tiếp 'ko có thumbnail' vào Preview"
+                                )
+                            except Exception as direct_exc:
+                                print(f"LỖI ghi trạng thái dòng {row_number}: {direct_exc}")
+                        else:
+                            print(f"LỖI ghi trạng thái dòng {row_number}: {write_exc}")
                 else:
                     print(f"LỖI dòng {row_number}: {exc}")
             finally:
