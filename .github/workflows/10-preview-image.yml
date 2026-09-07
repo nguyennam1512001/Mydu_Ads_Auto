@@ -1,11 +1,6 @@
 name: 🔟 Lấy Preview image
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/10-preview-image.yml"
   workflow_dispatch:
     inputs:
       limit:
@@ -52,9 +47,6 @@ jobs:
         shell: bash
         run: |
           args=()
-          if [[ "${{ github.event_name }}" == "push" ]]; then
-            args+=(--recover-only)
-          fi
           if [[ -n "${{ inputs.limit }}" ]]; then
             args+=(--limit "${{ inputs.limit }}")
           fi
