@@ -108,6 +108,7 @@ def parse_message_link(link: str) -> tuple[int | str, int]:
 
 def image_filename(link: str) -> str:
     parsed = urlparse((link or "").strip())
+
     private_match = PRIVATE_LINK.match(parsed.path)
     if private_match:
         return f"{private_match.group('channel')}_{private_match.group('message')}.jpg"
@@ -149,9 +150,26 @@ def get_sheet_layout(ws) -> tuple[int, int]:
     return link_col, preview_col
 
 
+def get_pending_rows(ws, limit: int | None) -> tuple[int, list[tuple[int, str]]]:
+    values = ws.get_all_values()
+    if not values:
+        raise ValueError("Tab Kho link video tele đang trống")
+
+    link_col, preview_col = get_sheet_layout(ws)
+    pending: list[tuple[int, str]] = []
+    for row_number, row in enumerate(values[HEADER_ROW:], start=HEADER_ROW + 1):
+        link = row[link_col - 1].strip() if link_col <= len(row) else ""
+        preview = row[preview_col - 1].strip() if preview_col <= len(row) else ""
+        if not link or preview:
+            continue
+        pending.append((row_number, link))
+        if limit is not None and len(pending) >= limit:
+            break
+    return preview_col, pending
+
+
 def preview_request(row_number: int, preview_col: int, file_id: str) -> dict[str, object]:
-    url = drive_image_url(file_id)
-    formula = f'=IMAGE("{url}")'
+    formula = f'=IMAGE("{drive_image_url(file_id)}")'
     return {
         "range": gspread.utils.rowcol_to_a1(row_number, preview_col),
         "values": [[formula]],
@@ -230,60 +248,59 @@ def upload_to_drive(drive, folder_id: str, path: Path) -> str:
     return file_id
 
 
-async def download_previews(limit: int | None, recover_only: bool) -> None:
-    sheet_creds = google_credentials()
-    ws = worksheet(sheet_creds)
-    values = ws.get_all_values()
-    if not values:
-        raise ValueError("Tab Kho link video tele đang trống")
+def build_drive():
+    return build(
+        "drive",
+        "v3",
+        credentials=google_drive_credentials(),
+        cache_discovery=False,
+    )
 
-    link_col, preview_col = get_sheet_layout(ws)
-    pending: list[tuple[int, str]] = []
-    for row_number, row in enumerate(values[HEADER_ROW:], start=HEADER_ROW + 1):
-        link = row[link_col - 1].strip() if link_col <= len(row) else ""
-        preview = row[preview_col - 1].strip() if preview_col <= len(row) else ""
-        if not link or preview:
-            continue
-        pending.append((row_number, link))
-        if limit is not None and len(pending) >= limit:
-            break
 
+def recover_previews(limit: int | None) -> None:
+    ws = worksheet(google_credentials())
+    preview_col, pending = get_pending_rows(ws, limit)
     if not pending:
-        print("Không có dòng nào cần lấy Preview.")
+        print("Không có dòng nào cần khôi phục Preview.")
         return
 
     drive_folder_id = required_env("GOOGLE_DRIVE_PREVIEW_FOLDER_ID")
-    drive_creds = google_drive_credentials()
-    drive = build("drive", "v3", credentials=drive_creds, cache_discovery=False)
-
-    missing_on_drive: list[tuple[int, str, str]] = []
-    recover_requests: list[dict[str, object]] = []
+    drive = build_drive()
+    requests: list[dict[str, object]] = []
+    found = 0
+    not_found = 0
 
     for row_number, link in pending:
         try:
             filename = image_filename(link)
-            existing_id = find_drive_file(drive, drive_folder_id, filename)
-            if existing_id:
-                recover_requests.append(preview_request(row_number, preview_col, existing_id))
-            else:
-                missing_on_drive.append((row_number, link, filename))
+            file_id = find_drive_file(drive, drive_folder_id, filename)
+            if not file_id:
+                not_found += 1
+                print(f"KHÔNG CÓ TRÊN DRIVE dòng {row_number}: {filename}")
+                continue
+            requests.append(preview_request(row_number, preview_col, file_id))
+            found += 1
         except Exception as exc:
             print(f"LỖI recover dòng {row_number}: {exc}")
 
-    recovered = 0
-    if recover_requests:
-        for start in range(0, len(recover_requests), 500):
-            chunk = recover_requests[start:start + 500]
-            batch_write_previews(ws, chunk)
-            recovered += len(chunk)
-            print(f"RECOVER: đã ghi {recovered}/{len(recover_requests)} Preview từ Drive")
+    written = 0
+    for start in range(0, len(requests), 500):
+        chunk = requests[start:start + 500]
+        batch_write_previews(ws, chunk)
+        written += len(chunk)
+        print(f"RECOVER: đã ghi {written}/{len(requests)} Preview từ Drive")
 
-    print(f"Đã khôi phục {recovered} Preview từ ảnh đã có trên Google Drive.")
-    if recover_only:
-        print(f"Recover-only: còn {len(missing_on_drive)} dòng chưa có ảnh trên Drive, không tải mới.")
-        return
-    if not missing_on_drive:
-        print("Tất cả dòng cần xử lý đã có ảnh trên Drive và đã được ghi vào Sheet.")
+    print(
+        f"Hoàn tất khôi phục: tìm thấy {found} ảnh trên Drive, "
+        f"đã ghi {written} Preview, {not_found} dòng chưa có ảnh trên Drive."
+    )
+
+
+async def download_new_previews(limit: int | None) -> None:
+    ws = worksheet(google_credentials())
+    preview_col, pending = get_pending_rows(ws, limit)
+    if not pending:
+        print("Không có dòng nào cần lấy Preview mới.")
         return
 
     api_id_raw = required_env("TELEGRAM_API_ID")
@@ -294,6 +311,8 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
 
     api_hash = required_env("TELEGRAM_API_HASH")
     session = required_env("TELEGRAM_SESSION")
+    drive_folder_id = required_env("GOOGLE_DRIVE_PREVIEW_FOLDER_ID")
+    drive = build_drive()
     temp_dir = Path("preview_temp")
     temp_dir.mkdir(parents=True, exist_ok=True)
 
@@ -305,9 +324,10 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
             raise RuntimeError("TELEGRAM_SESSION hết hạn hoặc chưa đăng nhập")
 
         entity_cache: dict[int | str, object] = {}
-        for row_number, link, filename in missing_on_drive:
+        for row_number, link in pending:
             destination: Path | None = None
             try:
+                filename = image_filename(link)
                 entity_ref, message_id = parse_message_link(link)
                 entity = entity_cache.get(entity_ref)
                 if entity is None:
@@ -348,26 +368,28 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
     finally:
         await client.disconnect()
 
-    print(
-        f"Hoàn tất: khôi phục {recovered} ảnh có sẵn trên Drive, "
-        f"tải mới và ghi ngay {uploaded} ảnh vào Sheet."
-    )
+    print(f"Hoàn tất: lấy mới và ghi ngay {uploaded} Preview vào Sheet.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Lấy thumbnail Telegram, upload Drive và ghi Preview ngay vào Google Sheet"
+        description="Lấy Preview mới từ Telegram hoặc khôi phục Preview từ ảnh đã có trên Google Drive"
     )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument(
-        "--recover-only",
-        action="store_true",
-        help="Chỉ tìm ảnh đã có trên Drive và ghi Preview vào Sheet, không tải ảnh mới từ Telegram",
+        "--mode",
+        choices=("new", "recover"),
+        default="new",
+        help="new = lấy Preview mới từ Telegram; recover = chỉ khôi phục Preview từ Drive",
     )
     args = parser.parse_args()
     if args.limit is not None and args.limit <= 0:
         raise ValueError("--limit phải lớn hơn 0")
-    asyncio.run(download_previews(args.limit, args.recover_only))
+
+    if args.mode == "recover":
+        recover_previews(args.limit)
+    else:
+        asyncio.run(download_new_previews(args.limit))
 
 
 if __name__ == "__main__":
