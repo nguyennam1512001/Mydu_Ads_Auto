@@ -6,6 +6,7 @@ import json
 import mimetypes
 import os
 import re
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -139,16 +140,33 @@ def get_sheet_layout(ws) -> tuple[int, int]:
     return link_col, preview_col
 
 
-def write_preview(ws, row_number: int, preview_col: int, file_id: str) -> None:
+def preview_request(row_number: int, preview_col: int, file_id: str) -> dict[str, object]:
     url = drive_image_url(file_id)
     formula = f'=IMAGE("{url}")'
-    ws.batch_update(
-        [{
-            "range": gspread.utils.rowcol_to_a1(row_number, preview_col),
-            "values": [[formula]],
-        }],
-        value_input_option="USER_ENTERED",
-    )
+    return {
+        "range": gspread.utils.rowcol_to_a1(row_number, preview_col),
+        "values": [[formula]],
+    }
+
+
+def batch_write_previews(ws, requests: list[dict[str, object]]) -> None:
+    if not requests:
+        return
+    for attempt in range(6):
+        try:
+            ws.batch_update(requests, value_input_option="USER_ENTERED")
+            return
+        except gspread.exceptions.APIError as exc:
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status != 429 or attempt == 5:
+                raise
+            wait_seconds = min(60, 5 * (2 ** attempt))
+            print(f"Sheets quota 429: chờ {wait_seconds}s rồi thử lại...")
+            time.sleep(wait_seconds)
+
+
+def write_preview(ws, row_number: int, preview_col: int, file_id: str) -> None:
+    batch_write_previews(ws, [preview_request(row_number, preview_col, file_id)])
 
 
 def find_drive_file(drive, folder_id: str, filename: str) -> str | None:
@@ -230,19 +248,30 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
     drive = build("drive", "v3", credentials=drive_creds, cache_discovery=False)
 
     missing_on_drive: list[tuple[int, str, str]] = []
-    recovered = 0
+    recover_requests: list[dict[str, object]] = []
+    recovered_rows: list[tuple[int, str]] = []
+
     for row_number, link in pending:
         try:
             filename = image_filename(link)
             existing_id = find_drive_file(drive, drive_folder_id, filename)
             if existing_id:
-                write_preview(ws, row_number, preview_col, existing_id)
-                recovered += 1
-                print(f"RECOVER dòng {row_number}: {filename} -> ghi Preview từ Drive")
+                recover_requests.append(preview_request(row_number, preview_col, existing_id))
+                recovered_rows.append((row_number, filename))
             else:
                 missing_on_drive.append((row_number, link, filename))
         except Exception as exc:
             print(f"LỖI recover dòng {row_number}: {exc}")
+
+    recovered = 0
+    if recover_requests:
+        # Một batch_update có thể ghi hàng trăm ô nhưng chỉ tính là một write request.
+        # Chia 500 dòng/batch để payload vẫn gọn nếu sheet rất lớn.
+        for start in range(0, len(recover_requests), 500):
+            chunk = recover_requests[start:start + 500]
+            batch_write_previews(ws, chunk)
+            recovered += len(chunk)
+            print(f"RECOVER: đã ghi {recovered}/{len(recover_requests)} Preview từ Drive")
 
     print(f"Đã khôi phục {recovered} Preview từ ảnh đã có trên Google Drive.")
     if recover_only:
