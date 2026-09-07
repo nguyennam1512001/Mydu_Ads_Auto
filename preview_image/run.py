@@ -151,20 +151,26 @@ def get_sheet_layout(ws) -> tuple[int, int]:
 
 
 def get_pending_rows(ws, limit: int | None) -> tuple[int, list[tuple[int, str]]]:
-    values = ws.get_all_values()
+    values = ws.get_all_values(value_render_option="FORMULA")
     if not values:
         raise ValueError("Tab Kho link video tele đang trống")
 
     link_col, preview_col = get_sheet_layout(ws)
     pending: list[tuple[int, str]] = []
+    skipped_with_preview = 0
     for row_number, row in enumerate(values[HEADER_ROW:], start=HEADER_ROW + 1):
         link = row[link_col - 1].strip() if link_col <= len(row) else ""
         preview = row[preview_col - 1].strip() if preview_col <= len(row) else ""
-        if not link or preview:
+        if not link:
+            continue
+        if preview:
+            skipped_with_preview += 1
             continue
         pending.append((row_number, link))
         if limit is not None and len(pending) >= limit:
             break
+
+    print(f"Bỏ qua {skipped_with_preview} dòng đã có Preview.")
     return preview_col, pending
 
 
