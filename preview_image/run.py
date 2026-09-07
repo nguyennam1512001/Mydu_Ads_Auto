@@ -182,6 +182,13 @@ def preview_request(row_number: int, preview_col: int, file_id: str) -> dict[str
     }
 
 
+def text_request(row_number: int, preview_col: int, text: str) -> dict[str, object]:
+    return {
+        "range": gspread.utils.rowcol_to_a1(row_number, preview_col),
+        "values": [[text]],
+    }
+
+
 def batch_write_previews(ws, requests: list[dict[str, object]]) -> None:
     if not requests:
         return
@@ -200,6 +207,10 @@ def batch_write_previews(ws, requests: list[dict[str, object]]) -> None:
 
 def write_preview(ws, row_number: int, preview_col: int, file_id: str) -> None:
     batch_write_previews(ws, [preview_request(row_number, preview_col, file_id)])
+
+
+def write_preview_text(ws, row_number: int, preview_col: int, text: str) -> None:
+    batch_write_previews(ws, [text_request(row_number, preview_col, text)])
 
 
 def find_drive_file(drive, folder_id: str, filename: str) -> str | None:
@@ -325,6 +336,7 @@ async def download_new_previews(limit: int | None) -> None:
     client = TelegramClient(StringSession(session), api_id, api_hash)
     await client.connect()
     uploaded = 0
+    no_thumbnail = 0
     try:
         if not await client.is_user_authorized():
             raise RuntimeError("TELEGRAM_SESSION hết hạn hoặc chưa đăng nhập")
@@ -367,14 +379,25 @@ async def download_new_previews(limit: int | None) -> None:
                 uploaded += 1
                 print(f"OK dòng {row_number}: {filename} -> Drive {file_id} -> đã ghi Preview")
             except Exception as exc:
-                print(f"LỖI dòng {row_number}: {exc}")
+                if str(exc) == "Telegram không có thumbnail cho media này":
+                    try:
+                        write_preview_text(ws, row_number, preview_col, "ko có thumbnail")
+                        no_thumbnail += 1
+                        print(f"Dòng {row_number}: không có thumbnail -> đã ghi vào Preview")
+                    except Exception as write_exc:
+                        print(f"LỖI ghi trạng thái dòng {row_number}: {write_exc}")
+                else:
+                    print(f"LỖI dòng {row_number}: {exc}")
             finally:
                 if destination and destination.exists():
                     destination.unlink()
     finally:
         await client.disconnect()
 
-    print(f"Hoàn tất: lấy mới và ghi ngay {uploaded} Preview vào Sheet.")
+    print(
+        f"Hoàn tất: lấy mới và ghi ngay {uploaded} Preview vào Sheet, "
+        f"đánh dấu {no_thumbnail} dòng 'ko có thumbnail'."
+    )
 
 
 def main() -> None:
