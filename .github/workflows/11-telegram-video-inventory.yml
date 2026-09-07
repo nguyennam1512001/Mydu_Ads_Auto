@@ -7,6 +7,10 @@ on:
         description: "Quét video từ ngày này trở đi, định dạng d/m/yyyy; để trống = không giới hạn ngày"
         required: false
         type: string
+      telegram_groups:
+        description: "Nhóm/kênh Telegram cần quét; có thể xuống dòng hoặc cách nhau bằng dấu phẩy; để trống = tất cả nhóm/kênh"
+        required: false
+        type: string
       codes:
         description: "Danh sách mã cần quét; có thể xuống dòng, cách nhau bằng dấu phẩy hoặc khoảng trắng"
         required: false
@@ -33,6 +37,7 @@ jobs:
       TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
       TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
       START_DATE: ${{ inputs.start_date }}
+      TELEGRAM_GROUPS: ${{ inputs.telegram_groups }}
       TARGET_CODES: ${{ inputs.codes }}
       LATEST_PER_CODE: ${{ inputs.latest_per_code }}
     steps:
@@ -55,6 +60,9 @@ jobs:
           args=()
           if [[ -n "$START_DATE" ]]; then
             args+=(--start-date "$START_DATE")
+          fi
+          if [[ -n "$TELEGRAM_GROUPS" ]]; then
+            args+=(--telegram-groups "$TELEGRAM_GROUPS")
           fi
           if [[ -n "$TARGET_CODES" ]]; then
             args+=(--codes "$TARGET_CODES")
