@@ -22,7 +22,7 @@ jobs:
     timeout-minutes: 30
     env:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
-      GOOGLE_SHEET_TAB: "Bài viết"
+      GOOGLE_SHEET_TAB: "Kho link video tele"
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       OAuth_Google: ${{ secrets.OAuth_Google }}
       GOOGLE_DRIVE_PREVIEW_FOLDER_ID: "1BmaIqYaxcbGUyYr1tNaBPmkRhUuMvfRP"
@@ -52,5 +52,5 @@ jobs:
           fi
           python preview_image/run.py download "${args[@]}"
 
-      - name: Ghi Preview_Image vào Google Sheet
+      - name: Ghi Preview vào Google Sheet
         run: python preview_image/run.py apply
