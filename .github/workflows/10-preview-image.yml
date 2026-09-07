@@ -1,6 +1,11 @@
 name: 🔟 Lấy Preview image
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/10-preview-image.yml"
   workflow_dispatch:
     inputs:
       limit:
@@ -19,7 +24,7 @@ jobs:
   preview_image:
     name: Lấy Preview image từ Telegram
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     env:
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       GOOGLE_SHEET_TAB: "Kho link video tele"
@@ -43,14 +48,14 @@ jobs:
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r preview_image/requirements.txt
 
-      - name: Lấy thumbnail và upload lên Google Drive
+      - name: Khôi phục ảnh đã có trên Drive hoặc lấy Preview mới
         shell: bash
         run: |
           args=()
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            args+=(--recover-only)
+          fi
           if [[ -n "${{ inputs.limit }}" ]]; then
             args+=(--limit "${{ inputs.limit }}")
           fi
-          python preview_image/run.py download "${args[@]}"
-
-      - name: Ghi Preview vào Google Sheet
-        run: python preview_image/run.py apply
+          python preview_image/run.py "${args[@]}"
