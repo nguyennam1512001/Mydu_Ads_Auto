@@ -3,6 +3,14 @@ name: 🔟 Lấy Preview image
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Chế độ chạy"
+        required: true
+        type: choice
+        default: "Lấy Preview mới"
+        options:
+          - "Lấy Preview mới"
+          - "Khôi phục Preview từ Drive"
       limit:
         description: "Số dòng tối đa; để trống = tất cả"
         required: false
@@ -43,10 +51,15 @@ jobs:
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r preview_image/requirements.txt
 
-      - name: Khôi phục ảnh đã có trên Drive hoặc lấy Preview mới
+      - name: Chạy chế độ Preview đã chọn
         shell: bash
         run: |
           args=()
+          if [[ "${{ inputs.mode }}" == "Khôi phục Preview từ Drive" ]]; then
+            args+=(--mode recover)
+          else
+            args+=(--mode new)
+          fi
           if [[ -n "${{ inputs.limit }}" ]]; then
             args+=(--limit "${{ inputs.limit }}")
           fi
