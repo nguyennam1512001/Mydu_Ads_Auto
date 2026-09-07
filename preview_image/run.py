@@ -29,6 +29,7 @@ SHEET_SCOPES = [
 DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 PRIVATE_LINK = re.compile(r"^/c/(?P<channel>\d+)/(?P<message>\d+)/?$")
 PUBLIC_LINK = re.compile(r"^/(?P<username>[A-Za-z][A-Za-z0-9_]{3,})/(?P<message>\d+)/?$")
+LEGACY_PUBLIC_C_LINK = re.compile(r"^/c/(?P<username>[A-Za-z][A-Za-z0-9_]{3,})/(?P<message>\d+)/?$")
 
 
 def normalize_header(value: str) -> str:
@@ -96,8 +97,12 @@ def parse_message_link(link: str) -> tuple[int | str, int]:
     if public_match:
         return public_match.group("username"), int(public_match.group("message"))
 
+    legacy_public_match = LEGACY_PUBLIC_C_LINK.match(parsed.path)
+    if legacy_public_match:
+        return legacy_public_match.group("username"), int(legacy_public_match.group("message"))
+
     raise ValueError(
-        "Chỉ hỗ trợ https://t.me/c/CHANNEL_ID/MESSAGE_ID hoặc https://t.me/USERNAME/MESSAGE_ID"
+        "Chỉ hỗ trợ https://t.me/c/CHANNEL_ID/MESSAGE_ID, https://t.me/USERNAME/MESSAGE_ID hoặc dạng c/USERNAME cũ"
     )
 
 
@@ -110,6 +115,10 @@ def image_filename(link: str) -> str:
     public_match = PUBLIC_LINK.match(parsed.path)
     if public_match:
         return f"{public_match.group('username')}_{public_match.group('message')}.jpg"
+
+    legacy_public_match = LEGACY_PUBLIC_C_LINK.match(parsed.path)
+    if legacy_public_match:
+        return f"{legacy_public_match.group('username')}_{legacy_public_match.group('message')}.jpg"
 
     raise ValueError("Không thể tạo tên ảnh từ link Telegram")
 
@@ -249,7 +258,6 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
 
     missing_on_drive: list[tuple[int, str, str]] = []
     recover_requests: list[dict[str, object]] = []
-    recovered_rows: list[tuple[int, str]] = []
 
     for row_number, link in pending:
         try:
@@ -257,7 +265,6 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
             existing_id = find_drive_file(drive, drive_folder_id, filename)
             if existing_id:
                 recover_requests.append(preview_request(row_number, preview_col, existing_id))
-                recovered_rows.append((row_number, filename))
             else:
                 missing_on_drive.append((row_number, link, filename))
         except Exception as exc:
@@ -265,8 +272,6 @@ async def download_previews(limit: int | None, recover_only: bool) -> None:
 
     recovered = 0
     if recover_requests:
-        # Một batch_update có thể ghi hàng trăm ô nhưng chỉ tính là một write request.
-        # Chia 500 dòng/batch để payload vẫn gọn nếu sheet rất lớn.
         for start in range(0, len(recover_requests), 500):
             chunk = recover_requests[start:start + 500]
             batch_write_previews(ws, chunk)
