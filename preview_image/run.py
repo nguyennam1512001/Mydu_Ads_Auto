@@ -20,7 +20,7 @@ from telethon.sessions import StringSession
 
 HEADER_ROW = 1
 COL_TELEGRAM_LINK = "Telegram_video_link"
-COL_PREVIEW_IMAGE = "Preview_Image"
+COL_PREVIEW_IMAGE = "Preview"
 SHEET_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -76,7 +76,7 @@ def google_drive_credentials() -> UserCredentials:
 
 def worksheet(creds: ServiceAccountCredentials | None = None):
     sheet_id = required_env("GOOGLE_SHEET_ID")
-    tab_name = os.getenv("GOOGLE_SHEET_TAB", "Bài viết")
+    tab_name = os.getenv("GOOGLE_SHEET_TAB", "Kho link video tele")
     creds = creds or google_credentials()
     return gspread.authorize(creds).open_by_key(sheet_id).worksheet(tab_name)
 
@@ -181,7 +181,7 @@ async def download_previews(limit: int | None, output: Path) -> None:
     ws = worksheet(sheet_creds)
     values = ws.get_all_values()
     if not values:
-        raise ValueError("Tab Bài viết đang trống")
+        raise ValueError("Tab Kho link video tele đang trống")
 
     headers = values[HEADER_ROW - 1]
     header_map = {
@@ -211,7 +211,7 @@ async def download_previews(limit: int | None, output: Path) -> None:
 
     if not pending:
         output.write_text("[]", encoding="utf-8")
-        print("Không có dòng nào cần lấy Preview_Image.")
+        print("Không có dòng nào cần lấy Preview.")
         return
 
     api_id_raw = required_env("TELEGRAM_API_ID")
@@ -289,7 +289,7 @@ def apply_updates(input_path: Path) -> None:
         raise FileNotFoundError(f"Không tìm thấy file cập nhật: {input_path}")
     updates_data = json.loads(input_path.read_text(encoding="utf-8"))
     if not updates_data:
-        print("Không có Preview_Image cần ghi vào Sheet.")
+        print("Không có Preview cần ghi vào Sheet.")
         return
 
     ws = worksheet()
@@ -314,12 +314,12 @@ def apply_updates(input_path: Path) -> None:
         })
 
     ws.batch_update(requests, value_input_option="USER_ENTERED")
-    print(f"Đã ghi {len(requests)} Preview_Image vào tab Bài viết.")
+    print(f"Đã ghi {len(requests)} Preview vào tab Kho link video tele.")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Lấy thumbnail video Telegram, upload Google Drive và ghi Preview_Image vào Google Sheet"
+        description="Lấy thumbnail video Telegram, upload Google Drive và ghi Preview vào Google Sheet"
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
