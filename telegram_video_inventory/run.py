@@ -256,6 +256,8 @@ async def scan(
 
         found: list[FoundVideo] = []
         seen_this_run = set(known_links)
+        seen_file_signatures: set[tuple[str, int]] = set()
+        duplicate_files = 0
         scanned_chats = 0
         scanned_messages = 0
 
@@ -315,6 +317,19 @@ async def scan(
                 if not link or link in seen_this_run:
                     continue
 
+                file_size = getattr(message.file, "size", None) if message.file else None
+                if isinstance(file_size, int):
+                    file_signature = (filename, file_size)
+                    if file_signature in seen_file_signatures:
+                        duplicate_files += 1
+                        print(
+                            f"BỎ TRÙNG: {filename} | {file_size} bytes | {link} "
+                            "(đã có link cùng tên file và dung lượng trong lần quét này)"
+                        )
+                        seen_this_run.add(link)
+                        continue
+                    seen_file_signatures.add(file_signature)
+
                 found.append(FoundVideo(code=code, link=link, date=message_date))
                 seen_this_run.add(link)
 
@@ -336,6 +351,7 @@ async def scan(
         )
         print(
             f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn {date_summary}, "
+            f"bỏ {duplicate_files} video trùng tên file + dung lượng, "
             f"tìm {len(found)} video mới phù hợp, ghi {len(selected)} video vào Sheet."
         )
     finally:
