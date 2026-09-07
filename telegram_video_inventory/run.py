@@ -43,6 +43,15 @@ def normalize_header(value: str) -> str:
     return " ".join((value or "").strip().casefold().split())
 
 
+def normalize_group_target(value: str) -> str:
+    target = " ".join((value or "").strip().casefold().split())
+    target = re.sub(r"^https?://(?:www\.)?t\.me/", "", target)
+    target = target.strip("/")
+    if target.startswith("@"):
+        target = target[1:]
+    return target
+
+
 def get_worksheet():
     sheet_id = required_env("GOOGLE_SHEET_ID")
     credentials_json = required_env("GOOGLE_CREDENTIALS")
@@ -63,6 +72,38 @@ def parse_start_date(value: str | None) -> datetime | None:
     except ValueError as exc:
         raise ValueError("Ngày phải có định dạng d/m/yyyy, ví dụ 6/9/2026") from exc
     return parsed.replace(tzinfo=VN_TZ).astimezone(timezone.utc)
+
+
+def parse_telegram_groups(value: str | None) -> set[str] | None:
+    if not value or not value.strip():
+        return None
+    parts = re.split(r"[,;\n\r]+", value.strip())
+    groups = {normalize_group_target(part) for part in parts if normalize_group_target(part)}
+    return groups or None
+
+
+def dialog_matches_target(dialog, targets: set[str] | None) -> bool:
+    if targets is None:
+        return True
+
+    entity = dialog.entity
+    candidates: set[str] = set()
+
+    name = normalize_group_target(getattr(dialog, "name", "") or "")
+    if name:
+        candidates.add(name)
+
+    username = normalize_group_target(getattr(entity, "username", "") or "")
+    if username:
+        candidates.add(username)
+
+    entity_id = getattr(entity, "id", None)
+    if entity_id is not None:
+        candidates.add(str(entity_id).casefold())
+        candidates.add(f"-100{entity_id}".casefold())
+        candidates.add(f"c/{entity_id}".casefold())
+
+    return bool(candidates & targets)
 
 
 def parse_codes(value: str | None) -> set[str] | None:
@@ -191,6 +232,7 @@ def select_latest_per_code(
 async def scan(
     *,
     start_date: datetime | None,
+    target_groups: set[str] | None,
     target_codes: set[str] | None,
     latest_per_code: int | None,
 ) -> None:
@@ -222,17 +264,32 @@ async def scan(
         else:
             print(f"Chỉ quét từ ngày {start_date.astimezone(VN_TZ).strftime('%d/%m/%Y')} trở đi.")
 
+        if target_groups:
+            print("Chỉ quét nhóm/kênh Telegram: " + ", ".join(sorted(target_groups)))
+        else:
+            print("Không nhập nhóm/kênh Telegram: quét tất cả nhóm/kênh.")
+
         if target_codes:
             print("Chỉ quét các mã: " + ", ".join(sorted(target_codes)))
         else:
             print("Không nhập danh sách mã: quét tất cả mã hợp lệ.")
 
+        matched_targets: set[str] = set()
         async for dialog in client.iter_dialogs():
             if not (dialog.is_group or dialog.is_channel):
                 continue
+            if not dialog_matches_target(dialog, target_groups):
+                continue
+
             scanned_chats += 1
             entity = dialog.entity
-            print(f"Đang quét: {dialog.name}")
+            dialog_name = getattr(dialog, "name", "") or ""
+            print(f"Đang quét: {dialog_name}")
+
+            if target_groups:
+                for target in target_groups:
+                    if dialog_matches_target(dialog, {target}):
+                        matched_targets.add(target)
 
             async for message in client.iter_messages(entity):
                 message_date = message.date
@@ -260,6 +317,11 @@ async def scan(
 
                 found.append(FoundVideo(code=code, link=link, date=message_date))
                 seen_this_run.add(link)
+
+        if target_groups:
+            missing_groups = sorted(target_groups - matched_targets)
+            if missing_groups:
+                print("CẢNH BÁO: Không tìm thấy nhóm/kênh: " + ", ".join(missing_groups))
 
         selected = select_latest_per_code(found, target_codes, latest_per_code)
         for item in selected:
@@ -290,6 +352,11 @@ def main() -> None:
         help="Chỉ quét tin nhắn từ ngày này trở đi, định dạng d/m/yyyy; để trống = không giới hạn ngày",
     )
     parser.add_argument(
+        "--telegram-groups",
+        default="",
+        help="Nhóm/kênh Telegram cần quét; nhập tên, @username, link t.me hoặc ID; phân tách bằng xuống dòng, dấu phẩy hoặc chấm phẩy; để trống = tất cả",
+    )
+    parser.add_argument(
         "--codes",
         default="",
         help="Danh sách mã cần quét; có thể xuống dòng, phân tách bằng dấu phẩy, chấm phẩy hoặc khoảng trắng",
@@ -307,6 +374,7 @@ def main() -> None:
     asyncio.run(
         scan(
             start_date=parse_start_date(args.start_date),
+            target_groups=parse_telegram_groups(args.telegram_groups),
             target_codes=parse_codes(args.codes),
             latest_per_code=args.latest_per_code,
         )
