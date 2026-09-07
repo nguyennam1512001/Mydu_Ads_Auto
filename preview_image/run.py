@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import mimetypes
 import os
@@ -104,8 +103,17 @@ def parse_message_link(link: str) -> tuple[int | str, int]:
 
 
 def image_filename(link: str) -> str:
-    digest = hashlib.sha1(link.strip().encode("utf-8")).hexdigest()[:20]
-    return f"telegram_{digest}.jpg"
+    parsed = urlparse((link or "").strip())
+
+    private_match = PRIVATE_LINK.match(parsed.path)
+    if private_match:
+        return f"{private_match.group('channel')}_{private_match.group('message')}.jpg"
+
+    public_match = PUBLIC_LINK.match(parsed.path)
+    if public_match:
+        return f"{public_match.group('username')}_{public_match.group('message')}.jpg"
+
+    raise ValueError("Không thể tạo tên ảnh từ link Telegram")
 
 
 def drive_image_url(file_id: str) -> str:
