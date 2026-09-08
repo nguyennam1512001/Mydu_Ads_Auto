@@ -1,0 +1,40 @@
+name: 1️⃣2️⃣ Quét bài ads tốt Telegram
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: mydu-good-ads-telegram
+  cancel-in-progress: false
+
+jobs:
+  scan_good_ads:
+    name: Quét group Các bài ads chạy tốt <150k
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+      GOOGLE_SHEET_TAB: "Các bài ads chạy tốt <150k"
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+      TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+      TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+      TELEGRAM_SESSION: ${{ secrets.TELEGRAM_SESSION }}
+      FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
+      META_GRAPH_VERSION: "v26.0"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: telegram_video_inventory/requirements.txt
+
+      - name: Cài thư viện
+        run: pip install --disable-pip-version-check -r telegram_video_inventory/requirements.txt
+
+      - name: Quét group Telegram và ghi Google Sheet
+        run: python telegram_good_ads/run.py
