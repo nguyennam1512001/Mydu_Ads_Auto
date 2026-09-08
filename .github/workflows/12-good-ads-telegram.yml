@@ -1,4 +1,4 @@
-name: 12. Quét bài ads <150k
+name: 11. Quét bài ads <150k
 
 on:
   workflow_dispatch:
