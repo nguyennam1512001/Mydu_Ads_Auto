@@ -47,4 +47,4 @@ jobs:
         run: pip install --disable-pip-version-check -r telegram_video_inventory/requirements.txt
 
       - name: Chạy chức năng đã chọn
-        run: python telegram_good_ads/run.py
+        run: python telegram_good_ads/run_fixed.py
