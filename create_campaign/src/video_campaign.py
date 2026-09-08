@@ -10,10 +10,12 @@ from src import sheet_client
 from src.cli import _build_campaign_configs_from_row, process_campaign_config
 from src.creative import wait_for_video_thumbnail
 from src.fb_client import get_ad_account, init_api
+from src.website_results import WebsiteResultWriter, read_post_once
 
 
 @dataclass(frozen=True)
 class VideoAsset:
+    row_number: int
     video_id: str
     title: str
     text_content: str
@@ -32,7 +34,12 @@ def read_video_assets(worksheet) -> dict[str, VideoAsset]:
             continue
         if code in assets:
             raise ValueError(f"Mã '{code}' bị trùng trong Bài viết (hàng {number})")
-        assets[code] = VideoAsset(data["FB_UPLOAD_ID"], data["Title"], data["Text_Content"])
+        assets[code] = VideoAsset(
+            row_number=number,
+            video_id=data["FB_UPLOAD_ID"],
+            title=data["Title"],
+            text_content=data["Text_Content"],
+        )
     return assets
 
 
@@ -77,7 +84,9 @@ def main() -> None:
     if not rows:
         print("Không có dòng nào cần tạo campaign.", flush=True)
         return
-    assets = read_video_assets(sheet_client.get_worksheet("Bài viết"))
+    article_worksheet = sheet_client.get_worksheet("Bài viết")
+    assets = read_video_assets(article_worksheet)
+    article_results = WebsiteResultWriter(article_worksheet)
     accounts = {}
     thumbnails = {}
     failures = 0
@@ -99,6 +108,12 @@ def main() -> None:
             if row.ad_account_id not in accounts:
                 accounts[row.ad_account_id] = get_ad_account(row.ad_account_id)
             results = [process_campaign_config(accounts[row.ad_account_id], config) for config in configs]
+            post_results = [
+                read_post_once(creative_id)
+                for result in results
+                for creative_id in result["creative_ids"]
+            ]
+            article_results.write_posts(asset.row_number, post_results)
             campaign_ids = [result["campaign_id"] for result in results]
             message = (
                 f"Thành công Video {row.campaign_count}-{row.adset_count}-{row.ad_count} - "
