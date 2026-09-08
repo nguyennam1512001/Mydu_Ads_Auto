@@ -1,4 +1,4 @@
-name: 5️⃣ Đăng Page → Tạo Campaign
+name: 5. Đăng Page → Tạo Campaign
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   publish_page:
-    name: 1️⃣ Đăng Facebook Page
+    name: 1. Đăng Facebook Page
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -50,7 +50,7 @@ jobs:
           python run.py "${args[@]}"
 
   create_campaign:
-    name: 2️⃣ Tạo Campaign
+    name: 2. Tạo Campaign
     needs: publish_page
     runs-on: ubuntu-latest
     timeout-minutes: 60
