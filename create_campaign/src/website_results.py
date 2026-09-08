@@ -1,37 +1,58 @@
-"""Save Website ad references; metadata reads never poll or retry."""
+"""Lưu tham chiếu bài viết của quảng cáo sau khi Meta hoàn tất tạo post."""
 from __future__ import annotations
 
 import json
+import time
 
 from facebook_business.adobjects.adcreative import AdCreative
 from facebook_business.adobjects.post import Post
 
 from src.sheet_client import _build_header_map, _col_to_index
 
+POST_LOOKUP_ATTEMPTS = 6
+POST_LOOKUP_DELAY_SECONDS = 5
+
 
 def read_post_once(creative_id: str) -> tuple[str, str]:
-    """Read one creative, then its post once if Meta has returned a story ID."""
-    try:
-        creative = AdCreative(creative_id).api_get(fields=["effective_object_story_id"])
-    except Exception as exc:  # Metadata failure must not recreate an ad.
-        print(f"Creative {creative_id}: chưa đọc được POST_ID ({type(exc).__name__}); không thử lại")
-        return "", ""
-    story_id = str(creative.get("effective_object_story_id") or "")
+    """Đợi ngắn để Meta trả POST_ID rồi đọc permalink của bài viết một lần có retry."""
+    story_id = ""
+    for attempt in range(1, POST_LOOKUP_ATTEMPTS + 1):
+        try:
+            creative = AdCreative(creative_id).api_get(fields=["effective_object_story_id"])
+            story_id = str(creative.get("effective_object_story_id") or "")
+        except Exception as exc:  # Metadata failure must not recreate an ad.
+            print(f"Creative {creative_id}: chưa đọc được POST_ID ({type(exc).__name__})")
+        if story_id:
+            break
+        if attempt < POST_LOOKUP_ATTEMPTS:
+            print(
+                f"Creative {creative_id}: chưa có POST_ID; thử lại sau "
+                f"{POST_LOOKUP_DELAY_SECONDS}s ({attempt}/{POST_LOOKUP_ATTEMPTS})"
+            )
+            time.sleep(POST_LOOKUP_DELAY_SECONDS)
     if not story_id:
-        print(f"Creative {creative_id}: chưa có POST_ID; không thử lại")
+        print(f"Creative {creative_id}: hết thời gian chờ POST_ID")
         return "", ""
+
     post_id = story_id.rsplit("_", 1)[-1]
-    try:
-        post = Post(story_id).api_get(fields=["permalink_url"])
-        link = str(post.get("permalink_url") or "")
-        if link.startswith("/"):
-            link = f"https://www.facebook.com{link}"
-    except Exception as exc:
-        print(f"Creative {creative_id}: chưa đọc được Post Link ({type(exc).__name__}); không thử lại")
-        return post_id, ""
-    if not link:
-        print(f"Creative {creative_id}: chưa có Post Link; không thử lại")
-    return post_id, link
+    for attempt in range(1, POST_LOOKUP_ATTEMPTS + 1):
+        try:
+            post = Post(story_id).api_get(fields=["permalink_url"])
+            link = str(post.get("permalink_url") or "")
+            if link.startswith("/"):
+                link = f"https://www.facebook.com{link}"
+            if link:
+                return post_id, link
+        except Exception as exc:
+            print(f"Creative {creative_id}: chưa đọc được Post Link ({type(exc).__name__})")
+        if attempt < POST_LOOKUP_ATTEMPTS:
+            print(
+                f"Creative {creative_id}: chưa có Post Link; thử lại sau "
+                f"{POST_LOOKUP_DELAY_SECONDS}s ({attempt}/{POST_LOOKUP_ATTEMPTS})"
+            )
+            time.sleep(POST_LOOKUP_DELAY_SECONDS)
+    print(f"Creative {creative_id}: hết thời gian chờ Post Link")
+    return post_id, ""
 
 
 class WebsiteResultWriter:
