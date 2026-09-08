@@ -1,4 +1,4 @@
-name: 3. Tạo Campaign
+name: 03. Tạo Campaign
 
 on:
   workflow_dispatch:
