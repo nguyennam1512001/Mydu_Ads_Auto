@@ -1,4 +1,4 @@
-name: 08. Lấy Image Hash từ FB_UPLOAD_ID
+name: 07. Lấy Image Hash từ FB_UPLOAD_ID
 
 on:
   workflow_dispatch:
