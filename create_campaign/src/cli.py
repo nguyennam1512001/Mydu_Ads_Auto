@@ -146,6 +146,7 @@ def process_campaign_config(account, camp_cfg: dict) -> dict:
     print(f"\n=== Campaign: {camp_cfg['name']} ===")
     adset_ids: list[str] = []
     ad_ids: list[str] = []
+    creative_ids: list[str] = []
 
     campaign = create_campaign(
         account,
@@ -204,6 +205,7 @@ def process_campaign_config(account, camp_cfg: dict) -> dict:
         for ad_cfg in adset_cfg.get("ads", []):
             print(f"      ..... Ad: {ad_cfg['name']}")
             creative = _build_creative(account, ad_cfg)
+            creative_ids.append(creative["id"])
             ad = create_ad(
                 account,
                 name=ad_cfg["name"],
@@ -214,7 +216,12 @@ def process_campaign_config(account, camp_cfg: dict) -> dict:
             ad_ids.append(ad["id"])
             print(f"          -> Ad ID: {ad['id']}")
 
-    return {"campaign_id": campaign_id, "adset_ids": adset_ids, "ad_ids": ad_ids}
+    return {
+        "campaign_id": campaign_id,
+        "adset_ids": adset_ids,
+        "ad_ids": ad_ids,
+        "creative_ids": creative_ids,
+    }
 
 
 def run(config_path: str) -> None:
