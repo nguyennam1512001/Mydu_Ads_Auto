@@ -42,6 +42,12 @@ VIDEO_URL_RE = re.compile(
     r"https?://(?:www\.)?facebook\.com/(?:[^/]+/)?videos/(?P<video>\d+)",
     re.IGNORECASE,
 )
+REEL_URL_RE = re.compile(
+    r"https?://(?:www\.)?facebook\.com/(?:reel|reels)/(?P<video>\d+)",
+    re.IGNORECASE,
+)
+
+_PAGE_TOKEN_CACHE: dict[str, str] = {}
 
 
 @dataclass(frozen=True)
@@ -172,6 +178,25 @@ def graph_get(object_id: str, fields: str, token: str) -> dict:
         raise RuntimeError(f"Không kết nối được Meta Graph API: {exc}") from exc
 
 
+def get_page_access_token(page_id: str, token: str) -> str:
+    cached = _PAGE_TOKEN_CACHE.get(page_id)
+    if cached:
+        return cached
+
+    payload = graph_get(page_id, "access_token", token)
+    page_token = str(payload.get("access_token") or "").strip() or token
+    _PAGE_TOKEN_CACHE[page_id] = page_token
+
+    if page_token != token:
+        print(f"Đã lấy Page Access Token cho Page {page_id}.")
+    else:
+        print(
+            f"CẢNH BÁO Page {page_id}: Meta không trả Page Access Token riêng; "
+            "đang dùng FB_ACCESS_TOKEN hiện tại."
+        )
+    return page_token
+
+
 def video_id_from_attachment(node: object) -> str:
     if not isinstance(node, dict):
         return ""
@@ -200,10 +225,32 @@ def video_id_from_attachment(node: object) -> str:
     return ""
 
 
+def _video_id_from_url(url: str) -> str:
+    for pattern in (VIDEO_URL_RE, REEL_URL_RE):
+        match = pattern.search(url or "")
+        if match:
+            return match.group("video")
+    return ""
+
+
+def page_id_from_permalink(permalink: str) -> str:
+    post_match = POST_URL_RE.search(permalink or "")
+    return post_match.group("page") if post_match else ""
+
+
+def is_page_permission_error(exc: Exception) -> bool:
+    text = str(exc).casefold()
+    return (
+        "pages_read_engagement" in text
+        or "page public content access" in text
+        or "pages_read_user_content" in text
+    )
+
+
 def resolve_video_id(permalink: str, token: str) -> str:
-    video_match = VIDEO_URL_RE.search(permalink)
-    if video_match:
-        return video_match.group("video")
+    direct_video_id = _video_id_from_url(permalink)
+    if direct_video_id:
+        return direct_video_id
 
     post_match = POST_URL_RE.search(permalink)
     if not post_match:
@@ -211,14 +258,25 @@ def resolve_video_id(permalink: str, token: str) -> str:
 
     page_id = post_match.group("page")
     post_id = post_match.group("post")
-
-    # Với permalink dạng /{page_id}/posts/{post_id}, Graph API hiện đại phải đọc
-    # Page Post object theo ID ghép {page_id}_{post_id}. Không fallback sang post_id
-    # đơn lẻ vì Meta sẽ coi đó là singular statuses API cũ và trả lỗi (#12).
+    page_token = get_page_access_token(page_id, token)
     object_id = f"{page_id}_{post_id}"
-    fields = "attachments{type,target,media,subattachments.limit(50){type,target,media}}"
 
-    payload = graph_get(object_id, fields, token)
+    # Cùng cách đang dùng ổn định trong post_page/src/facebook_client.py:
+    # đọc Page Post bằng Page Access Token và ưu tiên object_id khi type=video.
+    payload = graph_get(object_id, "id,object_id,type,permalink_url", page_token)
+    if str(payload.get("type") or "").casefold() == "video":
+        video_id = str(payload.get("object_id") or "").strip()
+        if video_id:
+            return video_id
+
+    permalink_url = str(payload.get("permalink_url") or "")
+    video_id = _video_id_from_url(permalink_url)
+    if video_id:
+        return video_id
+
+    # Fallback cho post có attachment/subattachment video.
+    fields = "attachments{type,target,media,subattachments.limit(50){type,target,media}}"
+    payload = graph_get(object_id, fields, page_token)
     attachments = payload.get("attachments") if isinstance(payload, dict) else None
     if isinstance(attachments, dict):
         for attachment in attachments.get("data") or []:
@@ -264,6 +322,8 @@ def fill_existing_video_ids(ws, token: str) -> None:
     already_has_video = 0
     no_video = 0
     errors = 0
+    blocked_pages: set[str] = set()
+    skipped_blocked_page = 0
 
     print("Bắt đầu lấy Video ID cho các dòng đang có trong Sheet...")
 
@@ -278,12 +338,25 @@ def fill_existing_video_ids(ws, token: str) -> None:
             already_has_video += 1
             continue
 
+        page_id = page_id_from_permalink(permalink)
+        if page_id and page_id in blocked_pages:
+            skipped_blocked_page += 1
+            continue
+
         candidates += 1
         try:
             video_id = resolve_video_id(permalink, token)
         except Exception as exc:
             errors += 1
-            print(f"CẢNH BÁO {code} - dòng {sheet_row}: không lấy được Video id: {exc}")
+            if page_id and is_page_permission_error(exc):
+                blocked_pages.add(page_id)
+                print(
+                    f"CẢNH BÁO Page {page_id}: token hiện tại không có quyền đọc Page "
+                    "(cần pages_read_engagement/Page Access Token phù hợp). "
+                    f"Tạm bỏ qua các dòng còn lại của Page này trong lần chạy."
+                )
+            else:
+                print(f"CẢNH BÁO {code} - dòng {sheet_row}: không lấy được Video id: {exc}")
             continue
 
         if not video_id:
@@ -301,9 +374,10 @@ def fill_existing_video_ids(ws, token: str) -> None:
 
     flush_video_updates(ws, updates)
     print(
-        f"Hoàn tất Lấy Video ID: kiểm tra {candidates} dòng còn trống, "
+        f"Hoàn tất Lấy Video ID: kiểm tra {candidates} dòng, "
         f"điền được {len(updates)}, không có video {no_video}, lỗi Meta {errors}, "
-        f"bỏ qua {already_has_video} dòng đã có Video id."
+        f"bỏ qua {already_has_video} dòng đã có Video id, "
+        f"bỏ nhanh {skipped_blocked_page} dòng thuộc Page thiếu quyền."
     )
 
 
@@ -347,7 +421,6 @@ async def find_group(client: TelegramClient):
             print(f"Đã khớp chính xác group Telegram: {raw_name}")
             return dialog.entity
 
-        # Fallback cho trường hợp tên group có khoảng trắng/ký tự Unicode hoặc thêm bớt vài ký tự.
         if "các bài ads chạy tốt" in name and "150k" in name:
             fallback = dialog.entity
             print(f"Đã tìm thấy group gần khớp: {raw_name}")
@@ -355,13 +428,20 @@ async def find_group(client: TelegramClient):
     if fallback is not None:
         return fallback
 
-    likely = [name for name in visible_groups if "ads" in normalize_group_name(name) or "150k" in normalize_group_name(name)]
+    likely = [
+        name
+        for name in visible_groups
+        if "ads" in normalize_group_name(name) or "150k" in normalize_group_name(name)
+    ]
     if likely:
         print("Các group/channel gần giống mà TELEGRAM_SESSION đang nhìn thấy:")
         for name in likely[:20]:
             print(f"- {name}")
     else:
-        print(f"TELEGRAM_SESSION nhìn thấy {len(visible_groups)} group/channel nhưng không có tên gần giống '{GROUP_NAME}'.")
+        print(
+            f"TELEGRAM_SESSION nhìn thấy {len(visible_groups)} group/channel nhưng "
+            f"không có tên gần giống '{GROUP_NAME}'."
+        )
 
     raise RuntimeError(
         f"Không tìm thấy group Telegram: {GROUP_NAME}. "
@@ -402,8 +482,8 @@ async def scan_telegram_good_ads(ws) -> None:
         skipped_existing = 0
         video_found = 0
         video_errors = 0
+        blocked_pages: set[str] = set()
 
-        # reverse=True để xử lý từ tin nhắn cũ -> mới và giữ đúng thứ tự lịch sử khi ghi Sheet.
         async for message in client.iter_messages(entity, reverse=True):
             scanned += 1
             text = message.raw_text or ""
@@ -419,16 +499,25 @@ async def scan_telegram_good_ads(ws) -> None:
 
             video_id = ""
             if token:
-                try:
-                    video_id = resolve_video_id(permalink, token)
-                    if video_id:
-                        video_found += 1
-                        print(f"+ {code}: Video id = {video_id}")
-                    else:
-                        print(f"+ {code}: không tìm thấy Video id từ Meta")
-                except Exception as exc:
-                    video_errors += 1
-                    print(f"CẢNH BÁO {code}: không lấy được Video id: {exc}")
+                page_id = page_id_from_permalink(permalink)
+                if not page_id or page_id not in blocked_pages:
+                    try:
+                        video_id = resolve_video_id(permalink, token)
+                        if video_id:
+                            video_found += 1
+                            print(f"+ {code}: Video id = {video_id}")
+                        else:
+                            print(f"+ {code}: không tìm thấy Video id từ Meta")
+                    except Exception as exc:
+                        video_errors += 1
+                        if page_id and is_page_permission_error(exc):
+                            blocked_pages.add(page_id)
+                            print(
+                                f"CẢNH BÁO Page {page_id}: thiếu quyền đọc Page; "
+                                "các tin còn lại của Page này sẽ không gọi Meta trong lần chạy."
+                            )
+                        else:
+                            print(f"CẢNH BÁO {code}: không lấy được Video id: {exc}")
 
             pending.append(
                 GoodAd(
