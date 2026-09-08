@@ -2,6 +2,15 @@ name: 11. Quét bài ads <150k
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: "Chọn chức năng cần chạy"
+        required: true
+        default: "Quét bài ads <150k"
+        type: choice
+        options:
+          - "Quét bài ads <150k"
+          - "Lấy Video ID"
 
 concurrency:
   group: mydu-good-ads-telegram
@@ -9,10 +18,11 @@ concurrency:
 
 jobs:
   scan_good_ads:
-    name: Quét group Các bài ads chạy tốt <150k
+    name: ${{ inputs.action }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
+      GOOD_ADS_ACTION: ${{ inputs.action }}
       GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
       GOOGLE_SHEET_TAB: "Các bài ads chạy tốt <150k"
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
@@ -36,5 +46,5 @@ jobs:
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r telegram_video_inventory/requirements.txt
 
-      - name: Quét group Telegram và ghi Google Sheet
+      - name: Chạy chức năng đã chọn
         run: python telegram_good_ads/run.py
