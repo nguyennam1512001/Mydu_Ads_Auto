@@ -1,4 +1,4 @@
-name: 1️⃣ Tạo Text Content
+name: 1. Tạo Text Content
 
 on:
   workflow_dispatch:
