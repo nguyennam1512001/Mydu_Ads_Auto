@@ -1,4 +1,4 @@
-name: 09. Đăng Facebook Page ko có nút gửi tin nhắn
+name: 08. Đăng Facebook Page ko có nút gửi tin nhắn
 
 on:
   workflow_dispatch:
