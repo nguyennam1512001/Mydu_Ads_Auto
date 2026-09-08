@@ -7,31 +7,31 @@ from src import website_results, website_sales
 
 
 class PostReadTests(unittest.TestCase):
-    def test_reads_each_node_once_and_keeps_id_if_link_unavailable(self):
-        for payload in [{"permalink_url": "/page/posts/456"}, {}, RuntimeError("denied")]:
-            with self.subTest(payload=payload), patch.object(website_results, "AdCreative") as creative, patch.object(website_results, "Post") as post:
-                creative.return_value.api_get.return_value = {"effective_object_story_id": "123_456"}
-                if isinstance(payload, Exception):
-                    post.return_value.api_get.side_effect = payload
-                else:
-                    post.return_value.api_get.return_value = payload
-                result = website_results.read_post_once("creative")
-                self.assertEqual(result[0], "456")
-                self.assertEqual(result[1], "https://www.facebook.com/page/posts/456" if payload and not isinstance(payload, Exception) else "")
-                creative.return_value.api_get.assert_called_once_with(fields=["effective_object_story_id"])
-                post.assert_called_once_with("123_456")
-                post.return_value.api_get.assert_called_once_with(fields=["permalink_url"])
+    def test_retries_until_meta_returns_post_id_then_builds_link(self):
+        with patch.object(website_results, "AdCreative") as creative, patch.object(website_results.time, "sleep") as sleep:
+            creative.return_value.api_get.side_effect = [
+                {},
+                {"effective_object_story_id": "123_456"},
+            ]
+            self.assertEqual(website_results.read_post_once("creative"), ("456", "https://www.facebook.com/123/posts/456"))
+        self.assertEqual(creative.return_value.api_get.call_count, 2)
+        self.assertEqual(sleep.call_count, 1)
+
+    def test_uses_story_id_without_reading_post(self):
+        with patch.object(website_results, "AdCreative") as creative:
+            creative.return_value.api_get.return_value = {"effective_object_story_id": "123_456"}
+            self.assertEqual(website_results.read_post_once("creative"), ("456", "https://www.facebook.com/123/posts/456"))
+            creative.return_value.api_get.assert_called_once_with(fields=["effective_object_story_id"])
 
     def test_missing_or_failed_creative_never_reads_post_or_retries(self):
         for payload in [{}, RuntimeError("pending")]:
-            with self.subTest(payload=payload), patch.object(website_results, "AdCreative") as creative, patch.object(website_results, "Post") as post:
+            with self.subTest(payload=payload), patch.object(website_results, "POST_LOOKUP_ATTEMPTS", 1), patch.object(website_results, "AdCreative") as creative:
                 if isinstance(payload, Exception):
                     creative.return_value.api_get.side_effect = payload
                 else:
                     creative.return_value.api_get.return_value = payload
                 self.assertEqual(website_results.read_post_once("creative"), ("", ""))
                 creative.return_value.api_get.assert_called_once()
-                post.assert_not_called()
 
 
 class SheetWriteTests(unittest.TestCase):
