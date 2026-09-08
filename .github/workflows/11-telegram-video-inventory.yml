@@ -1,4 +1,4 @@
-name: ⑪ Quét kho link video Telegram
+name: 11 Quét kho link video Telegram
 
 on:
   workflow_dispatch:
