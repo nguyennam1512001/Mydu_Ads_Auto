@@ -1,4 +1,4 @@
-name: 06. Chạy toàn bộ
+name: 05. Chạy toàn bộ
 
 on:
   workflow_dispatch:
