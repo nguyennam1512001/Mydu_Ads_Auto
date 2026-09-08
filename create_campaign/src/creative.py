@@ -122,6 +122,7 @@ def create_creative_from_video(
     link: str = "",
     cta_value: dict | None = None,
     title: str = "",
+    page_welcome_message: str | None = None,
 ) -> AdCreative:
     """
     Tạo creative mới dạng video (dùng cho các mẫu '-VIDEO-AI' như trong tài khoản).
@@ -152,4 +153,6 @@ def create_creative_from_video(
         AdCreative.Field.name: name,
         AdCreative.Field.object_story_spec: object_story_spec,
     }
+    if page_welcome_message:
+        params[AdCreative.Field.page_welcome_message] = page_welcome_message
     return account.create_ad_creative(params=params)
