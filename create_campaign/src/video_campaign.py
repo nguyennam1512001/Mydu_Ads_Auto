@@ -10,7 +10,7 @@ from src import sheet_client
 from src.cli import _build_campaign_configs_from_row, process_campaign_config
 from src.creative import wait_for_video_thumbnail
 from src.fb_client import get_ad_account, init_api
-from src.website_results import WebsiteResultWriter, read_post_once
+from src.website_results import WebsiteResultWriter, read_post_once, read_post_video_id
 
 
 @dataclass(frozen=True)
@@ -137,6 +137,21 @@ def main() -> None:
                 for creative_id in result["creative_ids"]
             ]
             article_results.write_posts(asset.row_number, post_results)
+            new_video_ids = {
+                read_post_video_id(row.page_id, post_id)
+                for post_id, _ in post_results
+                if post_id
+            }
+            new_video_ids.discard("")
+            if len(new_video_ids) == 1:
+                new_video_id = new_video_ids.pop()
+                article_results.write_video_id(asset.row_number, new_video_id)
+                print(f"Dòng {row.row_number}: cập nhật FB_UPLOAD_ID mới {new_video_id}", flush=True)
+            elif len(new_video_ids) > 1:
+                print(
+                    f"Dòng {row.row_number}: có nhiều video/Reel ID mới; giữ FB_UPLOAD_ID cũ",
+                    flush=True,
+                )
             campaign_ids = [result["campaign_id"] for result in results]
             message = (
                 f"Thành công Video {row.campaign_count}-{row.adset_count}-{row.ad_count} - "
