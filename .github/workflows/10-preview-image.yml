@@ -1,4 +1,4 @@
-name: 10. Lấy Preview image
+name: 09. Lấy Preview image
 
 on:
   workflow_dispatch:
