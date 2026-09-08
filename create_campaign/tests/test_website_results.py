@@ -24,12 +24,14 @@ class PostReadTests(unittest.TestCase):
             creative.return_value.api_get.assert_called_once_with(fields=["effective_object_story_id"])
 
     def test_reads_video_id_from_new_post_attachment(self):
-        with patch.object(website_results, "Post") as post:
-            post.return_value.get_attachments.return_value = [
-                {"media_type": "video", "target": {"id": "999"}}
-            ]
+        with patch.object(website_results, "FacebookAdsApi") as api:
+            api.get_default_api.return_value.call.return_value.json.return_value = {
+                "data": [{"media_type": "video", "target": {"id": "999"}}]
+            }
             self.assertEqual(website_results.read_post_video_id("123", "456"), "999")
-            post.assert_called_once_with("123_456")
+            api.get_default_api.return_value.call.assert_called_once_with(
+                "GET", ("123_456", "attachments"), params={"fields": "media_type,target,media"}
+            )
 
     def test_missing_or_failed_creative_never_reads_post_or_retries(self):
         for payload in [{}, RuntimeError("pending")]:
