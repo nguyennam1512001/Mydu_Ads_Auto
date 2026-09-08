@@ -19,6 +19,7 @@ class VideoAsset:
     video_id: str
     title: str
     text_content: str
+    image_hash: str = ""
 
 
 def read_video_assets(worksheet) -> dict[str, VideoAsset]:
@@ -26,6 +27,7 @@ def read_video_assets(worksheet) -> dict[str, VideoAsset]:
     headers = sheet_client._build_header_map(values[0] if values else [])
     names = ["Mã", "FB_UPLOAD_ID", "Title", "Text_Content"]
     columns = {name: sheet_client._col_to_index(headers, name) for name in names}
+    image_hash_column = headers.get(sheet_client._normalize_header("Image Hash"))
     assets = {}
     for number, row in enumerate(values[1:], start=2):
         data = {name: row[index].strip() if index < len(row) else "" for name, index in columns.items()}
@@ -39,6 +41,7 @@ def read_video_assets(worksheet) -> dict[str, VideoAsset]:
             video_id=data["FB_UPLOAD_ID"],
             title=data["Title"],
             text_content=data["Text_Content"],
+            image_hash=row[image_hash_column].strip() if image_hash_column is not None and image_hash_column < len(row) else "",
         )
     return assets
 
@@ -59,7 +62,9 @@ def require_asset(assets: dict[str, VideoAsset], code: str | None) -> VideoAsset
     return asset
 
 
-def build_video_configs(row, asset: VideoAsset, thumbnail_url: str) -> list[dict]:
+def build_video_configs(
+    row, asset: VideoAsset, thumbnail_url: str, image_hash: str = ""
+) -> list[dict]:
     configs = _build_campaign_configs_from_row(row)
     for config in configs:
         for adset in config["adsets"]:
@@ -70,10 +75,24 @@ def build_video_configs(row, asset: VideoAsset, thumbnail_url: str) -> list[dict
                     title=asset.title,
                     message=asset.text_content,
                     thumbnail_url=thumbnail_url,
+                    image_hash=image_hash,
                     call_to_action="MESSAGE_PAGE",
                     destination="messenger",
                 )
     return configs
+
+
+def image_hash_for_account(value: str, ad_account_id: str) -> str:
+    """Return a hash only when its optional account prefix matches this ad account."""
+    value = (value or "").strip()
+    if not value:
+        return ""
+    account_id, separator, image_hash = value.partition(":")
+    if not separator:
+        return value
+    if account_id.removeprefix("act_") != ad_account_id.removeprefix("act_"):
+        return ""
+    return image_hash.strip()
 
 
 def main() -> None:
@@ -96,15 +115,19 @@ def main() -> None:
         try:
             asset = require_asset(assets, row.group_ad_name)
             # Validate CHAT_TEMPLATE and the complete structure before creating campaigns.
-            configs = build_video_configs(row, asset, "")
-            key = (row.ad_account_id, asset.video_id)
-            if key not in thumbnails:
-                print(f"Dòng {row.row_number}: lấy thumbnail video {asset.video_id} (tối đa 600 giây)", flush=True)
-                thumbnails[key] = wait_for_video_thumbnail(asset.video_id)
-            for config in configs:
-                for adset in config["adsets"]:
-                    for ad in adset["ads"]:
-                        ad["thumbnail_url"] = thumbnails[key]
+            image_hash = image_hash_for_account(asset.image_hash, row.ad_account_id)
+            configs = build_video_configs(row, asset, "", image_hash)
+            if image_hash:
+                print(f"Dòng {row.row_number}: dùng Image Hash, không gọi thumbnail FB_UPLOAD_ID", flush=True)
+            else:
+                key = (row.ad_account_id, asset.video_id)
+                if key not in thumbnails:
+                    print(f"Dòng {row.row_number}: lấy thumbnail video {asset.video_id} (tối đa 600 giây)", flush=True)
+                    thumbnails[key] = wait_for_video_thumbnail(asset.video_id)
+                for config in configs:
+                    for adset in config["adsets"]:
+                        for ad in adset["ads"]:
+                            ad["thumbnail_url"] = thumbnails[key]
             if row.ad_account_id not in accounts:
                 accounts[row.ad_account_id] = get_ad_account(row.ad_account_id)
             results = [process_campaign_config(accounts[row.ad_account_id], config) for config in configs]
