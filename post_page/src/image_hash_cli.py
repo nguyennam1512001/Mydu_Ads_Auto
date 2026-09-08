@@ -7,6 +7,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import unquote, urlparse
 
@@ -283,9 +284,22 @@ class MetaImageHashClient:
         parser = HighestQualityThumbnailParser()
         parser.feed(response.text)
         if not parser.thumbnail_url:
+            # The site has changed attribute order before; retain a narrow fallback
+            # for its Download button rather than selecting the thumbnail sprite.
+            match = re.search(
+                r'<a[^>]*class=["\'][^"\']*\bbtn\b[^"\']*\bvolatile\b[^"\']*["\'][^>]*'
+                r'href=["\']([^"\']+)["\']',
+                response.text,
+                flags=re.IGNORECASE,
+            )
+            if match:
+                parser.thumbnail_url = unescape(match.group(1))
+        if not parser.thumbnail_url:
+            title = re.search(r"<title[^>]*>(.*?)</title>", response.text, flags=re.IGNORECASE | re.DOTALL)
+            page_title = re.sub(r"\s+", " ", unescape(title.group(1))).strip() if title else "không có title"
             raise RuntimeError(
                 "ThumbDownloader không trả về 'Highest quality thumbnail' "
-                f"(HTTP {response.status_code}, URL phản hồi: {response.url})"
+                f"(HTTP {response.status_code}, title: {page_title[:120]}, URL phản hồi: {response.url})"
             )
         return parser.thumbnail_url
 
