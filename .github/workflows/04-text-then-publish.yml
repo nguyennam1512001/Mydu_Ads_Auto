@@ -1,4 +1,4 @@
-name: 4. Text Content → Đăng Page
+name: 04. Text Content → Đăng Page
 
 on:
   workflow_dispatch:
