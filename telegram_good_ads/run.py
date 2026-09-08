@@ -23,6 +23,9 @@ SHEET_TAB = "Các bài ads chạy tốt <150k"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v26.0").strip() or "v26.0"
 
+ACTION_SCAN = "Quét bài ads <150k"
+ACTION_VIDEO_ID = "Lấy Video ID"
+
 COL_CODE = "Mã"
 COL_DATE = "Ngày"
 COL_PAGE = "Page"
@@ -229,6 +232,84 @@ def resolve_video_id(permalink: str, token: str) -> str:
     return ""
 
 
+def column_letter(zero_based_index: int) -> str:
+    number = zero_based_index + 1
+    result = ""
+    while number:
+        number, remainder = divmod(number - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def flush_video_updates(ws, updates: list[dict]) -> None:
+    if not updates:
+        return
+    for start in range(0, len(updates), 200):
+        chunk = updates[start : start + 200]
+        ws.batch_update(chunk, value_input_option="RAW")
+        print(f"Đã cập nhật Video id: {min(start + len(chunk), len(updates))}/{len(updates)} ô")
+
+
+def fill_existing_video_ids(ws, token: str) -> None:
+    values = ws.get_all_values()
+    if not values:
+        print("Sheet đang trống, không có dữ liệu để lấy Video ID.")
+        return
+
+    _, header_map = get_header_map(ws)
+    permalink_idx = header_map[normalize_header(COL_PERMALINK)]
+    video_idx = header_map[normalize_header(COL_VIDEO_ID)]
+    code_idx = header_map[normalize_header(COL_CODE)]
+    video_col = column_letter(video_idx)
+
+    updates: list[dict] = []
+    candidates = 0
+    already_has_video = 0
+    no_video = 0
+    errors = 0
+
+    print("Bắt đầu lấy Video ID cho các dòng đang có trong Sheet...")
+
+    for sheet_row, row in enumerate(values[HEADER_ROW:], start=HEADER_ROW + 1):
+        permalink = row[permalink_idx].strip() if permalink_idx < len(row) else ""
+        current_video = row[video_idx].strip() if video_idx < len(row) else ""
+        code = row[code_idx].strip() if code_idx < len(row) else f"dòng {sheet_row}"
+
+        if not permalink:
+            continue
+        if current_video:
+            already_has_video += 1
+            continue
+
+        candidates += 1
+        try:
+            video_id = resolve_video_id(permalink, token)
+        except Exception as exc:
+            errors += 1
+            print(f"CẢNH BÁO {code} - dòng {sheet_row}: không lấy được Video id: {exc}")
+            continue
+
+        if not video_id:
+            no_video += 1
+            print(f"- {code} - dòng {sheet_row}: không tìm thấy Video id")
+            continue
+
+        updates.append(
+            {
+                "range": f"{video_col}{sheet_row}",
+                "values": [[video_id]],
+            }
+        )
+        print(f"+ {code} - dòng {sheet_row}: Video id = {video_id}")
+
+    flush_video_updates(ws, updates)
+    print(
+        f"Hoàn tất Lấy Video ID: kiểm tra {candidates} dòng còn trống, "
+        f"điền được {len(updates)}, không có video {no_video}, lỗi Meta {errors}, "
+        f"bỏ qua {already_has_video} dòng đã có Video id."
+    )
+
+
 def append_rows(ws, items: list[GoodAd]) -> None:
     if not items:
         print("Không có tin nhắn mới cần ghi.")
@@ -291,8 +372,7 @@ async def find_group(client: TelegramClient):
     )
 
 
-async def main_async() -> None:
-    ws = get_worksheet()
+async def scan_telegram_good_ads(ws) -> None:
     known_permalinks = existing_permalinks(ws)
     token = os.getenv("FB_ACCESS_TOKEN", "").strip()
     if not token:
@@ -373,6 +453,22 @@ async def main_async() -> None:
         )
     finally:
         await client.disconnect()
+
+
+async def main_async() -> None:
+    ws = get_worksheet()
+    action = os.getenv("GOOD_ADS_ACTION", ACTION_SCAN).strip() or ACTION_SCAN
+    print(f"Chức năng được chọn: {action}")
+
+    if action == ACTION_VIDEO_ID:
+        token = required_env("FB_ACCESS_TOKEN")
+        fill_existing_video_ids(ws, token)
+        return
+
+    if action != ACTION_SCAN:
+        raise ValueError(f"Chức năng không hợp lệ: {action}")
+
+    await scan_telegram_good_ads(ws)
 
 
 def main() -> None:
