@@ -284,16 +284,14 @@ class MetaImageHashClient:
         parser = HighestQualityThumbnailParser()
         parser.feed(response.text)
         if not parser.thumbnail_url:
-            # The site has changed attribute order before; retain a narrow fallback
-            # for its Download button rather than selecting the thumbnail sprite.
-            match = re.search(
-                r'<a[^>]*class=["\'][^"\']*\bbtn\b[^"\']*\bvolatile\b[^"\']*["\'][^>]*'
-                r'href=["\']([^"\']+)["\']',
-                response.text,
-                flags=re.IGNORECASE,
-            )
-            if match:
-                parser.thumbnail_url = unescape(match.group(1))
+            # The highest-quality image is the first Facebook CDN image on the
+            # result page. It is rendered before the thumbnail sprite and avoids
+            # depending on the site's changing button classes/attribute order.
+            for href in re.findall(r'href=["\']([^"\']+)["\']', response.text, flags=re.IGNORECASE):
+                candidate = unescape(href)
+                if "scontent" in candidate and (".jpg" in candidate or ".jpeg" in candidate):
+                    parser.thumbnail_url = candidate
+                    break
         if not parser.thumbnail_url:
             title = re.search(r"<title[^>]*>(.*?)</title>", response.text, flags=re.IGNORECASE | re.DOTALL)
             page_title = re.sub(r"\s+", " ", unescape(title.group(1))).strip() if title else "không có title"
