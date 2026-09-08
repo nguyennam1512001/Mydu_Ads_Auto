@@ -1,4 +1,4 @@
-name: 07. Lấy Image Hash từ FB_UPLOAD_ID
+name: 07. Lấy Image Hash
 
 on:
   workflow_dispatch:
@@ -7,6 +7,14 @@ on:
         description: "Số dòng tối đa; để trống = tất cả"
         required: false
         type: string
+      source:
+        description: "Nguồn thumbnail"
+        required: true
+        default: "fb_upload_id"
+        type: choice
+        options:
+          - fb_upload_id
+          - thumbdownloader
 
 concurrency:
   group: mydu-ads-auto-system
@@ -14,7 +22,7 @@ concurrency:
 
 jobs:
   get_image_hash:
-    name: Lấy Image Hash từ FB_UPLOAD_ID
+    name: Lấy Image Hash
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -43,4 +51,5 @@ jobs:
           if [[ -n "${{ inputs.limit }}" ]]; then
             args+=(--limit "${{ inputs.limit }}")
           fi
+          args+=(--source "${{ inputs.source }}")
           python -m src.image_hash_cli "${args[@]}"
