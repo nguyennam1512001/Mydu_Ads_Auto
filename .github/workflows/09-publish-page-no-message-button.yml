@@ -1,4 +1,4 @@
-name: 9️⃣ Đăng Facebook Page ko có nút gửi tin nhắn
+name: 9. Đăng Facebook Page ko có nút gửi tin nhắn
 
 on:
   workflow_dispatch:
@@ -48,4 +48,3 @@ jobs:
             args+=(--limit "${{ inputs.publish_limit }}")
           fi
           python run.py "${args[@]}"
-
