@@ -211,24 +211,21 @@ def resolve_video_id(permalink: str, token: str) -> str:
 
     page_id = post_match.group("page")
     post_id = post_match.group("post")
-    object_ids = [f"{page_id}_{post_id}", post_id]
+
+    # Với permalink dạng /{page_id}/posts/{post_id}, Graph API hiện đại phải đọc
+    # Page Post object theo ID ghép {page_id}_{post_id}. Không fallback sang post_id
+    # đơn lẻ vì Meta sẽ coi đó là singular statuses API cũ và trả lỗi (#12).
+    object_id = f"{page_id}_{post_id}"
     fields = "attachments{type,target,media,subattachments.limit(50){type,target,media}}"
 
-    last_error: Exception | None = None
-    for object_id in object_ids:
-        try:
-            payload = graph_get(object_id, fields, token)
-            attachments = payload.get("attachments") if isinstance(payload, dict) else None
-            if isinstance(attachments, dict):
-                for attachment in attachments.get("data") or []:
-                    video_id = video_id_from_attachment(attachment)
-                    if video_id:
-                        return video_id
-        except Exception as exc:
-            last_error = exc
+    payload = graph_get(object_id, fields, token)
+    attachments = payload.get("attachments") if isinstance(payload, dict) else None
+    if isinstance(attachments, dict):
+        for attachment in attachments.get("data") or []:
+            video_id = video_id_from_attachment(attachment)
+            if video_id:
+                return video_id
 
-    if last_error:
-        raise last_error
     return ""
 
 
