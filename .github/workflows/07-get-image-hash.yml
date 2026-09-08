@@ -30,6 +30,8 @@ jobs:
       GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
       FB_ACCESS_TOKEN: ${{ secrets.FB_ACCESS_TOKEN }}
       FB_GRAPH_VERSION: ${{ vars.FB_GRAPH_VERSION || 'v25.0' }}
+      OAuth_Google: ${{ secrets.OAuth_Google }}
+      GOOGLE_DRIVE_PREVIEW_FOLDER_ID: "1BmaIqYaxcbGUyYr1tNaBPmkRhUuMvfRP"
     defaults:
       run:
         working-directory: post_page
