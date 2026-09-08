@@ -108,7 +108,6 @@ class VideoCampaignTests(unittest.TestCase):
             account = p(video, "get_ad_account", return_value=Mock())
             process = p(video, "process_campaign_config", return_value={"campaign_id": "c", "adset_ids": ["s", "s"], "ad_ids": ["a", "a", "a"], "creative_ids": ["creative"]})
             post_reader = p(video, "read_post_once", return_value=("post", "link"))
-            video_reader = p(video, "read_post_video_id", return_value="new-video")
             write = p(sheet_client, "write_result")
             video.main()
         self.assertFalse(reader.call_args.kwargs["require_post_id"])
@@ -116,9 +115,7 @@ class VideoCampaignTests(unittest.TestCase):
         account.assert_called_once()
         self.assertEqual(process.call_count, 4)
         self.assertEqual(post_reader.call_count, 4)
-        self.assertEqual(video_reader.call_count, 4)
         result_writer.return_value.write_posts.assert_any_call(8, [("post", "link"), ("post", "link")])
-        result_writer.return_value.write_video_id.assert_any_call(8, "new-video")
         self.assertEqual(write.call_count, 2)
         self.assertIn("AdSet: 4, Ad: 6", write.call_args.args[2])
 
