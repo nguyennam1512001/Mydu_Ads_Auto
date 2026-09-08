@@ -5,6 +5,7 @@ import json
 import os
 import time
 from dataclasses import dataclass
+from html.parser import HTMLParser
 
 import gspread
 import requests
@@ -21,7 +22,11 @@ COL_CODE = "Mã"
 COL_AD_ACCOUNT_ID = "AD_ACCOUNT_ID"
 COL_PAGE_ID = "PAGE_ID"
 COL_VIDEO_ID = "FB_UPLOAD_ID"
+COL_POST_LINK = "Post Link"
 COL_IMAGE_HASH = "Image Hash"
+SOURCE_FB_UPLOAD_ID = "fb_upload_id"
+SOURCE_THUMBDOWNLOADER = "thumbdownloader"
+THUMBDOWNLOADER_URL = "https://www.thumbdownloader.com/"
 
 
 def normalize_header(value: str) -> str:
@@ -61,9 +66,50 @@ class ImageHashRow:
     ad_account_id: str
     page_id: str
     video_id: str
+    post_link: str
 
 
-def read_rows(spreadsheet: gspread.Spreadsheet) -> tuple[gspread.Worksheet, list[ImageHashRow]]:
+class HighestQualityThumbnailParser(HTMLParser):
+    """Read only the first direct download URL labelled Highest quality thumbnail."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._item_depth: int | None = None
+        self._div_depth = 0
+        self._item_text: list[str] = []
+        self._item_download_url = ""
+        self.thumbnail_url = ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
+        if tag == "div":
+            self._div_depth += 1
+            if "itemwrap" in classes and self._item_depth is None:
+                self._item_depth = self._div_depth
+                self._item_text = []
+                self._item_download_url = ""
+        if self._item_depth is not None and tag == "a":
+            if {"btn", "volatile"}.issubset(classes) and attributes.get("href"):
+                self._item_download_url = str(attributes["href"])
+
+    def handle_data(self, data: str) -> None:
+        if self._item_depth is not None:
+            self._item_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "div":
+            if self._item_depth == self._div_depth:
+                label = " ".join(self._item_text).casefold()
+                if "highest quality thumbnail" in label and self._item_download_url:
+                    self.thumbnail_url = self._item_download_url
+                self._item_depth = None
+            self._div_depth -= 1
+
+
+def read_rows(
+    spreadsheet: gspread.Spreadsheet, *, source: str
+) -> tuple[gspread.Worksheet, list[ImageHashRow]]:
     posts = spreadsheet.worksheet("Bài viết")
     campaigns = spreadsheet.worksheet("Lên Camp")
 
@@ -86,21 +132,29 @@ def read_rows(spreadsheet: gspread.Spreadsheet) -> tuple[gspread.Worksheet, list
         return posts, []
     post_columns = header_map(post_values[HEADER_ROW - 1])
     post_code = column(post_columns, COL_CODE)
-    post_page = column(post_columns, COL_PAGE_ID)
-    post_video = column(post_columns, COL_VIDEO_ID)
+    post_page = column(post_columns, COL_PAGE_ID) if source == SOURCE_FB_UPLOAD_ID else None
+    post_video = column(post_columns, COL_VIDEO_ID) if source == SOURCE_FB_UPLOAD_ID else None
+    post_link_column = (
+        column(post_columns, COL_POST_LINK) if source == SOURCE_THUMBDOWNLOADER else None
+    )
     post_hash = column(post_columns, COL_IMAGE_HASH)
 
     rows: list[ImageHashRow] = []
     errors: list[str] = []
     for row_number, row in enumerate(post_values[HEADER_ROW:], start=HEADER_ROW + 1):
         code = cell(row, post_code)
-        page_id = cell(row, post_page)
-        video_id = cell(row, post_video)
+        page_id = cell(row, post_page) if post_page is not None else ""
+        video_id = cell(row, post_video) if post_video is not None else ""
+        post_link = cell(row, post_link_column) if post_link_column is not None else ""
         image_hash = cell(row, post_hash)
-        if image_hash or not video_id:
+        source_value = video_id if source == SOURCE_FB_UPLOAD_ID else post_link
+        if image_hash or not source_value:
             continue
-        if not code or not page_id:
-            errors.append(f"Dòng {row_number}: thiếu Mã hoặc PAGE_ID")
+        if not code:
+            errors.append(f"Dòng {row_number}: thiếu Mã")
+            continue
+        if source == SOURCE_FB_UPLOAD_ID and not page_id:
+            errors.append(f"Dòng {row_number}: thiếu PAGE_ID")
             continue
         account_ids = accounts_by_code.get(code, set())
         if not account_ids:
@@ -120,6 +174,7 @@ def read_rows(spreadsheet: gspread.Spreadsheet) -> tuple[gspread.Worksheet, list
             ad_account_id=next(iter(account_ids)),
             page_id=page_id,
             video_id=video_id,
+            post_link=post_link,
         ))
     if errors:
         raise ValueError("; ".join(errors))
@@ -182,6 +237,22 @@ class MetaImageHashClient:
             time.sleep(5)
         raise TimeoutError(f"Hết thời gian chờ thumbnail của FB_UPLOAD_ID {video_id}")
 
+    def thumbdownloader_thumbnail_url(self, source_url: str) -> str:
+        """Ask ThumbDownloader for its direct Highest quality thumbnail download URL."""
+        response = self.http.get(
+            THUMBDOWNLOADER_URL,
+            params={"u": source_url},
+            timeout=120,
+        )
+        response.raise_for_status()
+        parser = HighestQualityThumbnailParser()
+        parser.feed(response.text)
+        if not parser.thumbnail_url:
+            raise RuntimeError(
+                "ThumbDownloader không trả về 'Highest quality thumbnail' cho URL này"
+            )
+        return parser.thumbnail_url
+
     def create_image_hash(self, ad_account_id: str, thumbnail_url: str) -> str:
         image_response = self.http.get(thumbnail_url, timeout=120)
         image_response.raise_for_status()
@@ -204,14 +275,14 @@ class MetaImageHashClient:
         raise RuntimeError("Meta upload ảnh thành công nhưng không trả về Image Hash")
 
 
-def run(*, limit: int | None = None) -> None:
+def run(*, limit: int | None = None, source: str = SOURCE_FB_UPLOAD_ID) -> None:
     load_dotenv()
     credentials = json.loads(required_env("GOOGLE_CREDENTIALS"))
     client = gspread.authorize(
         Credentials.from_service_account_info(credentials, scopes=SCOPES)
     )
     spreadsheet = client.open_by_key(required_env("GOOGLE_SHEET_ID"))
-    worksheet, rows = read_rows(spreadsheet)
+    worksheet, rows = read_rows(spreadsheet, source=source)
     if limit is not None:
         rows = rows[:limit]
     if not rows:
@@ -228,7 +299,11 @@ def run(*, limit: int | None = None) -> None:
     for row in rows:
         started = time.monotonic()
         try:
-            url = meta.thumbnail_url(row.page_id, row.video_id)
+            url = (
+                meta.thumbnail_url(row.page_id, row.video_id)
+                if source == SOURCE_FB_UPLOAD_ID
+                else meta.thumbdownloader_thumbnail_url(row.post_link)
+            )
             value = meta.create_image_hash(row.ad_account_id, url)
             worksheet.update_acell(
                 gspread.utils.rowcol_to_a1(row.row_number, hash_column), value
@@ -242,10 +317,16 @@ def run(*, limit: int | None = None) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lấy Image Hash từ FB_UPLOAD_ID")
+    parser = argparse.ArgumentParser(description="Lấy Image Hash từ FB_UPLOAD_ID hoặc Post Link")
     parser.add_argument("--limit", type=int, help="Giới hạn số dòng xử lý")
+    parser.add_argument(
+        "--source",
+        choices=[SOURCE_FB_UPLOAD_ID, SOURCE_THUMBDOWNLOADER],
+        default=SOURCE_FB_UPLOAD_ID,
+        help="Nguồn thumbnail: fb_upload_id (mặc định) hoặc thumbdownloader (cột Post Link)",
+    )
     args = parser.parse_args()
-    run(limit=args.limit)
+    run(limit=args.limit, source=args.source)
 
 
 if __name__ == "__main__":
