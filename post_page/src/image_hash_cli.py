@@ -9,7 +9,7 @@ import time
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 import gspread
 import requests
@@ -18,6 +18,7 @@ from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from playwright.sync_api import sync_playwright
 
 
 SCOPES = [
@@ -267,39 +268,26 @@ class MetaImageHashClient:
         The source URL is deliberately passed through unchanged: this mode does not
         validate host, path, or whether the post is public.
         """
-        response = self.http.get(
-            THUMBDOWNLOADER_URL,
-            params={"u": source_url},
-            headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language": "en-US,en;q=0.9",
-                "User-Agent": (
-                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-                ),
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-        parser = HighestQualityThumbnailParser()
-        parser.feed(response.text)
-        if not parser.thumbnail_url:
-            # The highest-quality image is the first Facebook CDN image on the
-            # result page. It is rendered before the thumbnail sprite and avoids
-            # depending on the site's changing button classes/attribute order.
-            for href in re.findall(r'href=["\']([^"\']+)["\']', response.text, flags=re.IGNORECASE):
-                candidate = unescape(href)
-                if "scontent" in candidate and (".jpg" in candidate or ".jpeg" in candidate):
-                    parser.thumbnail_url = candidate
-                    break
-        if not parser.thumbnail_url:
-            title = re.search(r"<title[^>]*>(.*?)</title>", response.text, flags=re.IGNORECASE | re.DOTALL)
-            page_title = re.sub(r"\s+", " ", unescape(title.group(1))).strip() if title else "không có title"
-            raise RuntimeError(
-                "ThumbDownloader không trả về 'Highest quality thumbnail' "
-                f"(HTTP {response.status_code}, title: {page_title[:120]}, URL phản hồi: {response.url})"
-            )
-        return parser.thumbnail_url
+        # The result is inserted only after the site's JavaScript calls /core.php.
+        # Use Chromium so this follows the same path as the interactive website.
+        target = f"{THUMBDOWNLOADER_URL}?u={quote(source_url, safe='')}"
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch()
+            try:
+                page = browser.new_page()
+                page.goto(target, wait_until="domcontentloaded", timeout=120_000)
+                items = page.locator("#volatile_content .itemwrap")
+                items.first.wait_for(timeout=120_000)
+                for index in range(items.count()):
+                    item = items.nth(index)
+                    if "highest quality thumbnail" not in item.inner_text().casefold():
+                        continue
+                    href = item.locator("a.volatile").first.get_attribute("href")
+                    if href:
+                        return href
+                raise RuntimeError("ThumbDownloader không trả về Highest quality thumbnail")
+            finally:
+                browser.close()
 
     def download_thumbnail(self, thumbnail_url: str) -> requests.Response:
         image_response = self.http.get(thumbnail_url, timeout=120)
