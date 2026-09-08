@@ -1,4 +1,4 @@
-name: 2️⃣ Đăng Facebook Page
+name: 2. Đăng Facebook Page
 
 on:
   workflow_dispatch:
