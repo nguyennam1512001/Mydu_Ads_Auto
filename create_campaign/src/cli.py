@@ -97,6 +97,8 @@ def _build_creative(account, ad_cfg: dict):
             call_to_action_type=ad_cfg.get("call_to_action", "SHOP_NOW"),
             link=ad_cfg.get("link", ""),
             cta_value=_build_cta_value(ad_cfg),
+            title=ad_cfg.get("title", ""),
+            page_welcome_message=ad_cfg.get("page_welcome_message"),
         )
 
     if ad_cfg.get("video_path"):
