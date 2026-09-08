@@ -269,6 +269,14 @@ class MetaImageHashClient:
         response = self.http.get(
             THUMBDOWNLOADER_URL,
             params={"u": source_url},
+            headers={
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "User-Agent": (
+                    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                ),
+            },
             timeout=120,
         )
         response.raise_for_status()
@@ -276,7 +284,8 @@ class MetaImageHashClient:
         parser.feed(response.text)
         if not parser.thumbnail_url:
             raise RuntimeError(
-                "ThumbDownloader không trả về 'Highest quality thumbnail' cho URL này"
+                "ThumbDownloader không trả về 'Highest quality thumbnail' "
+                f"(HTTP {response.status_code}, URL phản hồi: {response.url})"
             )
         return parser.thumbnail_url
 
