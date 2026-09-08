@@ -1,4 +1,4 @@
-name: 5. Đăng Page → Tạo Campaign
+name: 05. Đăng Page → Tạo Campaign
 
 on:
   workflow_dispatch:
