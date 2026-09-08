@@ -18,6 +18,7 @@ from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
 
@@ -272,12 +273,30 @@ class MetaImageHashClient:
         # Use Chromium so this follows the same path as the interactive website.
         target = f"{THUMBDOWNLOADER_URL}?u={quote(source_url, safe='')}"
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
+            browser = playwright.chromium.launch(
+                args=["--disable-blink-features=AutomationControlled"]
+            )
             try:
-                page = browser.new_page()
+                context = browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                    ),
+                    viewport={"width": 1366, "height": 768},
+                )
+                context.add_init_script(
+                    "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+                )
+                page = context.new_page()
                 page.goto(target, wait_until="domcontentloaded", timeout=120_000)
                 items = page.locator("#volatile_content .itemwrap")
-                items.first.wait_for(timeout=120_000)
+                try:
+                    items.first.wait_for(timeout=120_000)
+                except PlaywrightTimeoutError as exc:
+                    raise RuntimeError(
+                        "ThumbDownloader không tạo thumbnail trong 120 giây "
+                        f"(title: {page.title()[:120]})"
+                    ) from exc
                 for index in range(items.count()):
                     item = items.nth(index)
                     if "highest quality thumbnail" not in item.inner_text().casefold():
