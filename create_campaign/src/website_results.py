@@ -46,10 +46,9 @@ def read_post_video_id(page_id: str, post_id: str) -> str:
     story_id = f"{page_id}_{post_id}"
     for attempt in range(1, POST_LOOKUP_ATTEMPTS + 1):
         try:
-            payload = Post(story_id).api_get(
-                fields=["attachments{media_type,target,media,subattachments}"]
+            attachments = Post(story_id).get_attachments(
+                fields=["media_type", "target", "media"]
             )
-            attachments = (payload.get("attachments") or {}).get("data") or []
             for attachment in attachments:
                 if str(attachment.get("media_type") or "").lower() != "video":
                     continue
