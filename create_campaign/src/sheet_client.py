@@ -251,7 +251,7 @@ def _col_to_index(header_map: dict[str, int], column_name: str) -> int:
     return header_map[normalized]
 
 
-def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
+def read_rows(worksheet: gspread.Worksheet, *, require_post_id: bool = True) -> list[SheetRow]:
     """
     Đọc toàn bộ dòng có dữ liệu trong sheet.
 
@@ -275,7 +275,7 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
     idx_budget = _col_to_index(header_map, COL_DAILY_BUDGET)
     idx_schedule_date = _col_to_index(header_map, COL_SCHEDULE_DATE)
     idx_schedule_time = _col_to_index(header_map, COL_SCHEDULE_TIME)
-    idx_post = _col_to_index(header_map, COL_POST_ID)
+    idx_post = _col_to_index(header_map, COL_POST_ID) if require_post_id else None
     idx_message_template = _col_to_index(header_map, COL_MESSAGE_TEMPLATE)
     idx_gender = _col_to_index(header_map, COL_GENDER)
     idx_age = _col_to_index(header_map, COL_AGE)
@@ -295,7 +295,7 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
         budget_raw = cell(row, idx_budget)
         schedule_date_raw = cell(row, idx_schedule_date) 
         schedule_time_raw = cell(row, idx_schedule_time) 
-        post_id = cell(row, idx_post)
+        post_id = cell(row, idx_post) if idx_post is not None else ""
         message_template_name = cell(row, idx_message_template)
         gender_raw = cell(row, idx_gender)
         age_raw = cell(row, idx_age)
@@ -317,7 +317,7 @@ def read_rows(worksheet: gspread.Worksheet) -> list[SheetRow]:
                 ("Ngân sách", budget_raw),
                 ("ID POST", post_id),
             ]
-            if not val
+            if not val and (label != "ID POST" or require_post_id)
         ]
         if missing:
             write_result(worksheet, row_number, f"Lỗi: thiếu {', '.join(missing)}")
