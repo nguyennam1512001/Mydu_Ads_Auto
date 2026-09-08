@@ -20,7 +20,6 @@ from telethon.sessions import StringSession
 HEADER_ROW = 1
 GROUP_NAME = "Các bài ads chạy tốt <150k"
 SHEET_TAB = "Các bài ads chạy tốt <150k"
-POSTS_TAB = "Bài viết"
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 GRAPH_VERSION = os.getenv("META_GRAPH_VERSION", "v26.0").strip() or "v26.0"
 
@@ -34,10 +33,6 @@ COL_ADS_SP = "ADS/SP"
 COL_PERMALINK = "Permalink"
 COL_VIDEO_ID = "Video id"
 
-POSTS_COL_PAGE_ID = "PAGE_ID"
-POSTS_COL_VIDEO_ID = "FB_UPLOAD_ID"
-POSTS_COL_POST_ID = "POST_ID"
-POSTS_COL_POST_LINK = "Post Link"
 
 FACEBOOK_URL_RE = re.compile(r"https?://(?:www\.)?facebook\.com/[^\s<>]+", re.IGNORECASE)
 POST_URL_RE = re.compile(
@@ -64,12 +59,6 @@ class GoodAd:
     ads_sp: str
     permalink: str
     video_id: str
-
-
-@dataclass(frozen=True)
-class PostVideoIndex:
-    by_page_post: dict[tuple[str, str], str]
-    by_link: dict[str, str]
 
 
 def required_env(name: str) -> str:
@@ -188,6 +177,23 @@ def graph_get(object_id: str, fields: str, token: str) -> dict:
         raise RuntimeError(f"Không kết nối được Meta Graph API: {exc}") from exc
 
 
+def graph_get_edge(object_id: str, edge: str, fields: str, token: str) -> dict:
+    """Read a Graph API edge without using deprecated Post field expansions."""
+    params = urllib.parse.urlencode({"fields": fields, "access_token": token})
+    quoted_object_id = urllib.parse.quote(object_id, safe="_")
+    quoted_edge = urllib.parse.quote(edge.strip("/"), safe="")
+    url = f"https://graph.facebook.com/{GRAPH_VERSION}/{quoted_object_id}/{quoted_edge}?{params}"
+    request = urllib.request.Request(url, headers={"User-Agent": "Mydu-Ads-Auto/1.0"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Meta Graph API HTTP {exc.code}: {body[:500]}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"Không kết nối được Meta Graph API: {exc}") from exc
+
+
 def get_page_access_token(page_id: str, token: str) -> str:
     cached = _PAGE_TOKEN_CACHE.get(page_id)
     if cached:
@@ -211,20 +217,12 @@ def video_id_from_attachment(node: object) -> str:
     if not isinstance(node, dict):
         return ""
 
-    attachment_type = str(node.get("type") or "").casefold()
+    attachment_type = str(node.get("media_type") or "").casefold()
     target = node.get("target")
     if "video" in attachment_type and isinstance(target, dict):
         target_id = str(target.get("id") or "").strip()
         if target_id:
             return target_id
-
-    media = node.get("media")
-    if isinstance(media, dict):
-        media_target = media.get("target")
-        if isinstance(media_target, dict):
-            media_id = str(media_target.get("id") or "").strip()
-            if media_id and "video" in attachment_type:
-                return media_id
 
     subattachments = node.get("subattachments")
     if isinstance(subattachments, dict):
@@ -241,34 +239,6 @@ def _video_id_from_url(url: str) -> str:
         if match:
             return match.group("video")
     return ""
-
-
-def normalize_facebook_link(url: str) -> str:
-    raw = (url or "").strip()
-    if not raw:
-        return ""
-    try:
-        parsed = urllib.parse.urlsplit(raw)
-    except ValueError:
-        return raw.rstrip("/").casefold()
-
-    host = (parsed.hostname or "").casefold()
-    if host in {"facebook.com", "www.facebook.com", "m.facebook.com"}:
-        host = "www.facebook.com"
-    path = parsed.path.rstrip("/") or "/"
-
-    # Với watch/video.php cần giữ tham số v; còn post/reel/videos chỉ cần path.
-    query = urllib.parse.parse_qs(parsed.query)
-    if path.rstrip("/") in {"/watch", "/video.php"} and query.get("v"):
-        return f"https://{host}{path}?v={query['v'][0]}".casefold()
-    return f"https://{host}{path}".casefold()
-
-
-def normalize_post_id(value: str) -> str:
-    post_id = (value or "").strip()
-    if "_" in post_id:
-        post_id = post_id.rsplit("_", 1)[-1]
-    return post_id
 
 
 def post_ref_from_permalink(permalink: str) -> tuple[str, str]:
@@ -291,88 +261,6 @@ def is_page_permission_error(exc: Exception) -> bool:
     )
 
 
-def build_post_video_index(book) -> PostVideoIndex:
-    try:
-        ws = book.worksheet(POSTS_TAB)
-    except Exception as exc:
-        print(f"CẢNH BÁO: không mở được tab '{POSTS_TAB}': {exc}")
-        return PostVideoIndex({}, {})
-
-    values = ws.get_all_values()
-    if not values:
-        print(f"Tab '{POSTS_TAB}' đang trống; sẽ fallback sang Meta API.")
-        return PostVideoIndex({}, {})
-
-    headers = values[HEADER_ROW - 1]
-    header_map = {
-        normalize_header(value): index
-        for index, value in enumerate(headers)
-        if normalize_header(value)
-    }
-
-    video_idx = header_map.get(normalize_header(POSTS_COL_VIDEO_ID))
-    page_idx = header_map.get(normalize_header(POSTS_COL_PAGE_ID))
-    post_idx = header_map.get(normalize_header(POSTS_COL_POST_ID))
-    link_idx = header_map.get(normalize_header(POSTS_COL_POST_LINK))
-
-    if video_idx is None:
-        print(
-            f"CẢNH BÁO: tab '{POSTS_TAB}' không có cột {POSTS_COL_VIDEO_ID}; "
-            "sẽ fallback sang Meta API."
-        )
-        return PostVideoIndex({}, {})
-
-    by_page_post: dict[tuple[str, str], str] = {}
-    by_link: dict[str, str] = {}
-    source_rows = 0
-
-    for row in values[HEADER_ROW:]:
-        video_id = row[video_idx].strip() if video_idx < len(row) else ""
-        if not video_id:
-            continue
-
-        source_rows += 1
-        page_id = row[page_idx].strip() if page_idx is not None and page_idx < len(row) else ""
-        post_id = row[post_idx].strip() if post_idx is not None and post_idx < len(row) else ""
-        post_link = row[link_idx].strip() if link_idx is not None and link_idx < len(row) else ""
-
-        post_id = normalize_post_id(post_id)
-        if post_link:
-            link_page, link_post = post_ref_from_permalink(post_link)
-            if not page_id:
-                page_id = link_page
-            if not post_id:
-                post_id = link_post
-            normalized_link = normalize_facebook_link(post_link)
-            if normalized_link:
-                by_link.setdefault(normalized_link, video_id)
-
-        if page_id and post_id:
-            by_page_post.setdefault((page_id, post_id), video_id)
-
-    print(
-        f"Đã nạp Video ID từ tab '{POSTS_TAB}': {source_rows} dòng có {POSTS_COL_VIDEO_ID}, "
-        f"{len(by_page_post)} cặp PAGE_ID+POST_ID, {len(by_link)} Post Link."
-    )
-    return PostVideoIndex(by_page_post, by_link)
-
-
-def lookup_video_id_from_posts(permalink: str, index: PostVideoIndex) -> str:
-    normalized_link = normalize_facebook_link(permalink)
-    if normalized_link:
-        video_id = index.by_link.get(normalized_link, "")
-        if video_id:
-            return video_id
-
-    page_id, post_id = post_ref_from_permalink(permalink)
-    if page_id and post_id:
-        video_id = index.by_page_post.get((page_id, post_id), "")
-        if video_id:
-            return video_id
-
-    return ""
-
-
 def resolve_video_id(permalink: str, token: str) -> str:
     direct_video_id = _video_id_from_url(permalink)
     if direct_video_id:
@@ -387,25 +275,25 @@ def resolve_video_id(permalink: str, token: str) -> str:
     page_token = get_page_access_token(page_id, token)
     object_id = f"{page_id}_{post_id}"
 
-    payload = graph_get(object_id, "id,object_id,type,permalink_url", page_token)
-    if str(payload.get("type") or "").casefold() == "video":
-        video_id = str(payload.get("object_id") or "").strip()
-        if video_id:
-            return video_id
+    # PagePost v26: request only current PagePost fields, then read media from
+    # its dedicated edge rather than from an aggregated field expansion.
+    payload = graph_get(object_id, "id,permalink_url", page_token)
 
     permalink_url = str(payload.get("permalink_url") or "")
     video_id = _video_id_from_url(permalink_url)
     if video_id:
         return video_id
 
-    fields = "attachments{type,target,media,subattachments.limit(50){type,target,media}}"
-    payload = graph_get(object_id, fields, page_token)
-    attachments = payload.get("attachments") if isinstance(payload, dict) else None
-    if isinstance(attachments, dict):
-        for attachment in attachments.get("data") or []:
-            video_id = video_id_from_attachment(attachment)
-            if video_id:
-                return video_id
+    attachments = graph_get_edge(
+        object_id,
+        "attachments",
+        "media_type,target,subattachments.limit(50){media_type,target}",
+        page_token,
+    )
+    for attachment in attachments.get("data") or []:
+        video_id = video_id_from_attachment(attachment)
+        if video_id:
+            return video_id
 
     return ""
 
@@ -428,13 +316,11 @@ def flush_video_updates(ws, updates: list[dict]) -> None:
         print(f"Đã cập nhật Video id: {min(start + len(chunk), len(updates))}/{len(updates)} ô")
 
 
-def fill_existing_video_ids(ws, book, token: str) -> None:
+def fill_existing_video_ids(ws, token: str) -> None:
     values = ws.get_all_values()
     if not values:
         print("Sheet đang trống, không có dữ liệu để lấy Video ID.")
         return
-
-    post_index = build_post_video_index(book)
 
     _, header_map = get_header_map(ws)
     permalink_idx = header_map[normalize_header(COL_PERMALINK)]
@@ -445,7 +331,6 @@ def fill_existing_video_ids(ws, book, token: str) -> None:
     updates: list[dict] = []
     candidates = 0
     already_has_video = 0
-    from_posts_tab = 0
     from_meta = 0
     no_video = 0
     meta_errors = 0
@@ -467,15 +352,6 @@ def fill_existing_video_ids(ws, book, token: str) -> None:
             continue
 
         candidates += 1
-
-        # Ưu tiên dữ liệu đã có sẵn ở tab Bài viết. Đây là Video ID thật Meta trả
-        # về lúc hệ thống upload video nên không cần quyền pages_read_engagement.
-        video_id = lookup_video_id_from_posts(permalink, post_index)
-        if video_id:
-            from_posts_tab += 1
-            updates.append({"range": f"{video_col}{sheet_row}", "values": [[video_id]]})
-            print(f"+ {code} - dòng {sheet_row}: Video id = {video_id} (từ tab {POSTS_TAB})")
-            continue
 
         # Permalink video/reel có ID trực tiếp thì không cần gọi API.
         direct_video_id = _video_id_from_url(permalink)
@@ -504,7 +380,7 @@ def fill_existing_video_ids(ws, book, token: str) -> None:
                 blocked_pages.add(page_id)
                 print(
                     f"CẢNH BÁO Page {page_id}: token hiện tại không có quyền đọc Page. "
-                    f"Các dòng còn lại của Page này vẫn được dò tab '{POSTS_TAB}' nhưng sẽ không gọi Meta."
+                    "Các dòng còn lại của Page này sẽ không gọi Meta trong lượt chạy này."
                 )
             else:
                 print(f"CẢNH BÁO {code} - dòng {sheet_row}: không lấy được Video id: {exc}")
@@ -522,8 +398,7 @@ def fill_existing_video_ids(ws, book, token: str) -> None:
     flush_video_updates(ws, updates)
     print(
         f"Hoàn tất Lấy Video ID: {candidates} dòng cần xử lý, "
-        f"điền được {len(updates)}; từ tab '{POSTS_TAB}' {from_posts_tab}, "
-        f"từ URL/Meta {from_meta}; chưa lấy được {no_video}; "
+        f"điền được {len(updates)}; từ URL/Meta {from_meta}; chưa lấy được {no_video}; "
         f"Meta đã gọi {meta_attempts} dòng, lỗi {meta_errors}; "
         f"bỏ qua {already_has_video} dòng đã có Video id, "
         f"bỏ gọi Meta nhanh {skipped_blocked_page} dòng thuộc Page thiếu quyền."
@@ -700,10 +575,10 @@ async def main_async() -> None:
         token = os.getenv("FB_ACCESS_TOKEN", "").strip()
         if not token:
             print(
-                "CẢNH BÁO: thiếu FB_ACCESS_TOKEN. Vẫn lấy Video ID từ tab 'Bài viết'; "
-                "chỉ các dòng không khớp tab này mới không thể fallback sang Meta API."
+                "CẢNH BÁO: thiếu FB_ACCESS_TOKEN; không thể gọi Meta để lấy Video ID "
+                "cho các Permalink không chứa trực tiếp ID video hoặc reel."
             )
-        fill_existing_video_ids(ws, book, token)
+        fill_existing_video_ids(ws, token)
         return
 
     if action != ACTION_SCAN:
@@ -718,3 +593,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
