@@ -256,7 +256,7 @@ async def scan(
 
         found: list[FoundVideo] = []
         seen_this_run = set(known_links)
-        seen_file_signatures: set[tuple[str, int]] = set()
+        file_signature_indexes: dict[tuple[str, int], int] = {}
         duplicate_files = 0
         scanned_chats = 0
         scanned_messages = 0
@@ -317,20 +317,24 @@ async def scan(
                 if not link or link in seen_this_run:
                     continue
 
+                item = FoundVideo(code=code, link=link, date=message_date)
                 file_size = getattr(message.file, "size", None) if message.file else None
                 if isinstance(file_size, int):
                     file_signature = (filename, file_size)
-                    if file_signature in seen_file_signatures:
+                    previous_index = file_signature_indexes.get(file_signature)
+                    if previous_index is not None:
                         duplicate_files += 1
-                        print(
-                            f"BỎ TRÙNG: {filename} | {file_size} bytes | {link} "
-                            "(đã có link cùng tên file và dung lượng trong lần quét này)"
-                        )
+                        previous = found[previous_index]
+                        found[previous_index] = item
                         seen_this_run.add(link)
+                        print(
+                            f"THAY LINK TRÙNG: {filename} | {file_size} bytes | "
+                            f"bỏ {previous.link} -> giữ {link} (link gặp cuối cùng)"
+                        )
                         continue
-                    seen_file_signatures.add(file_signature)
+                    file_signature_indexes[file_signature] = len(found)
 
-                found.append(FoundVideo(code=code, link=link, date=message_date))
+                found.append(item)
                 seen_this_run.add(link)
 
         if target_groups:
@@ -351,7 +355,7 @@ async def scan(
         )
         print(
             f"Hoàn tất: quét {scanned_chats} nhóm/kênh, {scanned_messages} tin nhắn {date_summary}, "
-            f"bỏ {duplicate_files} video trùng tên file + dung lượng, "
+            f"bỏ {duplicate_files} link trùng tên file + dung lượng trước đó, "
             f"tìm {len(found)} video mới phù hợp, ghi {len(selected)} video vào Sheet."
         )
     finally:
