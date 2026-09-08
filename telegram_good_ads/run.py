@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import re
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -59,6 +60,13 @@ def required_env(name: str) -> str:
 
 def normalize_header(value: str) -> str:
     return " ".join((value or "").strip().casefold().split())
+
+
+def normalize_group_name(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value or "")
+    value = value.replace("\u00a0", " ")
+    value = " ".join(value.casefold().strip().split())
+    return value
 
 
 def get_worksheet():
@@ -245,14 +253,42 @@ def append_rows(ws, items: list[GoodAd]) -> None:
 
 
 async def find_group(client: TelegramClient):
-    wanted = GROUP_NAME.casefold().strip()
+    wanted = normalize_group_name(GROUP_NAME)
+    fallback = None
+    visible_groups: list[str] = []
+
     async for dialog in client.iter_dialogs():
         if not (dialog.is_group or dialog.is_channel):
             continue
-        name = (getattr(dialog, "name", "") or "").casefold().strip()
+
+        raw_name = getattr(dialog, "name", "") or ""
+        name = normalize_group_name(raw_name)
+        visible_groups.append(raw_name)
+
         if name == wanted:
+            print(f"Đã khớp chính xác group Telegram: {raw_name}")
             return dialog.entity
-    raise RuntimeError(f"Không tìm thấy group Telegram: {GROUP_NAME}")
+
+        # Fallback cho trường hợp tên group có khoảng trắng/ký tự Unicode hoặc thêm bớt vài ký tự.
+        if "các bài ads chạy tốt" in name and "150k" in name:
+            fallback = dialog.entity
+            print(f"Đã tìm thấy group gần khớp: {raw_name}")
+
+    if fallback is not None:
+        return fallback
+
+    likely = [name for name in visible_groups if "ads" in normalize_group_name(name) or "150k" in normalize_group_name(name)]
+    if likely:
+        print("Các group/channel gần giống mà TELEGRAM_SESSION đang nhìn thấy:")
+        for name in likely[:20]:
+            print(f"- {name}")
+    else:
+        print(f"TELEGRAM_SESSION nhìn thấy {len(visible_groups)} group/channel nhưng không có tên gần giống '{GROUP_NAME}'.")
+
+    raise RuntimeError(
+        f"Không tìm thấy group Telegram: {GROUP_NAME}. "
+        "Hãy kiểm tra tài khoản dùng để tạo TELEGRAM_SESSION có đang là thành viên của group này không."
+    )
 
 
 async def main_async() -> None:
