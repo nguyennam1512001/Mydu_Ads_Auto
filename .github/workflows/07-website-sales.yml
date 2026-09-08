@@ -1,4 +1,4 @@
-name: 7. Tạo Campaign Doanh số Website
+name: 07. Tạo Campaign Doanh số Website
 
 on:
   workflow_dispatch:
