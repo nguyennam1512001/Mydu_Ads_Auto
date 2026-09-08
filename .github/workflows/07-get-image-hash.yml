@@ -46,6 +46,8 @@ jobs:
           cache-dependency-path: post_page/requirements.txt
       - name: Cài thư viện
         run: pip install --disable-pip-version-check -r requirements.txt
+      - name: Cài Chromium cho ThumbDownloader
+        run: python -m playwright install --with-deps chromium
       - name: Lấy Image Hash
         shell: bash
         run: |
