@@ -5,7 +5,6 @@ import json
 import time
 
 from facebook_business.adobjects.adcreative import AdCreative
-from facebook_business.api import FacebookAdsApi
 
 from src.sheet_client import _build_header_map, _col_to_index
 
@@ -39,32 +38,6 @@ def read_post_once(creative_id: str) -> tuple[str, str]:
         print(f"Creative {creative_id}: effective_object_story_id không hợp lệ: {story_id}")
         return "", ""
     return post_id, f"https://www.facebook.com/{page_id}/posts/{post_id}"
-
-
-def read_post_video_id(page_id: str, post_id: str) -> str:
-    """Read the Reel/video ID attached to the newly-created post when available."""
-    story_id = f"{page_id}_{post_id}"
-    for attempt in range(1, POST_LOOKUP_ATTEMPTS + 1):
-        try:
-            response = FacebookAdsApi.get_default_api().call(
-                "GET",
-                (story_id, "attachments"),
-                params={"fields": "media_type,target,media"},
-            )
-            attachments = response.json().get("data") or []
-            for attachment in attachments:
-                if str(attachment.get("media_type") or "").lower() != "video":
-                    continue
-                for candidate in (attachment.get("target") or {}, attachment.get("media") or {}):
-                    video_id = str(candidate.get("id") or "").strip()
-                    if video_id.isdigit():
-                        return video_id
-        except Exception as exc:
-            print(f"Post {story_id}: chưa đọc được video/Reel ID ({type(exc).__name__})")
-        if attempt < POST_LOOKUP_ATTEMPTS:
-            time.sleep(POST_LOOKUP_DELAY_SECONDS)
-    print(f"Post {story_id}: không có video/Reel ID mới; giữ FB_UPLOAD_ID cũ")
-    return ""
 
 
 class WebsiteResultWriter:
@@ -103,6 +76,3 @@ class WebsiteResultWriter:
             return json.dumps([value or None for value in values], ensure_ascii=False)
 
         self._write(row_number, {"POST_ID": cell(0), "Post Link": cell(1)})
-
-    def write_video_id(self, row_number: int, video_id: str) -> None:
-        self._write(row_number, {"FB_UPLOAD_ID": video_id})
