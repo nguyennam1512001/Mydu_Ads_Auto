@@ -116,8 +116,9 @@ def create_creative_from_video(
     page_id: str,
     message: str,
     video_id: str,
-    thumbnail_url: str,
     name: str,
+    thumbnail_url: str = "",
+    image_hash: str = "",
     call_to_action_type: str = "SHOP_NOW",
     link: str = "",
     cta_value: dict | None = None,
@@ -139,12 +140,17 @@ def create_creative_from_video(
         "video_id": video_id,
         "message": message,
         "title": title,
-        "image_url": thumbnail_url,
         "call_to_action": {
             "type": call_to_action_type,
             "value": cta_value,
         },
     }
+    if image_hash:
+        video_data["image_hash"] = image_hash
+    elif thumbnail_url:
+        video_data["image_url"] = thumbnail_url
+    else:
+        raise ValueError("Creative video cần image_hash hoặc thumbnail_url")
     object_story_spec = {
         "page_id": page_id,
         "video_data": video_data,
