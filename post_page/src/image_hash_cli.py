@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
+import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.parse import unquote, urlparse
 
 import gspread
 import requests
 from dotenv import load_dotenv
+from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 
 SCOPES = [
@@ -24,9 +30,13 @@ COL_PAGE_ID = "PAGE_ID"
 COL_VIDEO_ID = "FB_UPLOAD_ID"
 COL_POST_LINK = "Post Link"
 COL_IMAGE_HASH = "Image Hash"
+COL_LINK = "link"
+COL_PREVIEW = "Preview"
+GOOD_ADS_TAB = "Các bài ads chạy tốt <150k"
 SOURCE_FB_UPLOAD_ID = "fb_upload_id"
 SOURCE_THUMBDOWNLOADER = "thumbdownloader"
 THUMBDOWNLOADER_URL = "https://www.thumbdownloader.com/"
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 
 def normalize_header(value: str) -> str:
@@ -57,6 +67,19 @@ def column(columns: dict[str, int], name: str) -> int:
 
 def cell(row: list[str], index: int) -> str:
     return row[index].strip() if index < len(row) else ""
+
+
+def image_filename(source_url: str) -> str:
+    """Make a stable filename from a URL without requiring a Facebook URL."""
+    parts = [part for part in urlparse(source_url).path.split("/") if part]
+    numeric_parts = [part for part in parts if part.isdecimal()]
+    if len(numeric_parts) >= 2:
+        stem = "_".join(numeric_parts[-2:])
+    else:
+        stem = re.sub(r"[^A-Za-z0-9]+", "_", unquote(source_url)).strip("_")
+    if not stem:
+        raise ValueError("Không thể đặt tên ảnh từ Post Link trống")
+    return f"{stem[:180]}.jpg"
 
 
 @dataclass(frozen=True)
@@ -238,7 +261,11 @@ class MetaImageHashClient:
         raise TimeoutError(f"Hết thời gian chờ thumbnail của FB_UPLOAD_ID {video_id}")
 
     def thumbdownloader_thumbnail_url(self, source_url: str) -> str:
-        """Ask ThumbDownloader for its direct Highest quality thumbnail download URL."""
+        """Ask ThumbDownloader for its direct Highest quality thumbnail download URL.
+
+        The source URL is deliberately passed through unchanged: this mode does not
+        validate host, path, or whether the post is public.
+        """
         response = self.http.get(
             THUMBDOWNLOADER_URL,
             params={"u": source_url},
@@ -253,9 +280,12 @@ class MetaImageHashClient:
             )
         return parser.thumbnail_url
 
-    def create_image_hash(self, ad_account_id: str, thumbnail_url: str) -> str:
+    def download_thumbnail(self, thumbnail_url: str) -> requests.Response:
         image_response = self.http.get(thumbnail_url, timeout=120)
         image_response.raise_for_status()
+        return image_response
+
+    def create_image_hash(self, ad_account_id: str, image_response: requests.Response) -> str:
         response = self.http.post(
             f"{self.base_url}/act_{ad_account_id}/adimages",
             data={"access_token": self.access_token},
@@ -273,6 +303,98 @@ class MetaImageHashClient:
             if image.get("hash"):
                 return f"{ad_account_id}:{image['hash']}"
         raise RuntimeError("Meta upload ảnh thành công nhưng không trả về Image Hash")
+
+
+class DrivePreviewWriter:
+    def __init__(self, spreadsheet: gspread.Spreadsheet) -> None:
+        oauth_info = json.loads(required_env("OAuth_Google"))
+        required_fields = ("client_id", "client_secret", "refresh_token")
+        missing = [field for field in required_fields if not str(oauth_info.get(field, "")).strip()]
+        if missing:
+            raise ValueError("OAuth_Google thiếu trường bắt buộc: " + ", ".join(missing))
+        credentials = UserCredentials(
+            token=None,
+            refresh_token=str(oauth_info["refresh_token"]).strip(),
+            token_uri=str(oauth_info.get("token_uri") or "https://oauth2.googleapis.com/token").strip(),
+            client_id=str(oauth_info["client_id"]).strip(),
+            client_secret=str(oauth_info["client_secret"]).strip(),
+            scopes=DRIVE_SCOPES,
+        )
+        self.drive = build("drive", "v3", credentials=credentials, cache_discovery=False)
+        self.folder_id = required_env("GOOGLE_DRIVE_PREVIEW_FOLDER_ID")
+        self.worksheet = spreadsheet.worksheet(GOOD_ADS_TAB)
+        columns = header_map(self.worksheet.row_values(HEADER_ROW))
+        self.link_column = column(columns, COL_LINK) + 1
+        self.preview_column = column(columns, COL_PREVIEW) + 1
+
+    @staticmethod
+    def drive_image_url(file_id: str) -> str:
+        return f"https://drive.usercontent.google.com/download?id={file_id}&export=view&authuser=0"
+
+    def _find_file(self, filename: str) -> str | None:
+        safe_name = filename.replace("'", "\\'")
+        result = self.drive.files().list(
+            q=f"name = '{safe_name}' and '{self.folder_id}' in parents and trashed = false",
+            spaces="drive",
+            fields="files(id,name)",
+            pageSize=1,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        ).execute()
+        files = result.get("files", [])
+        return str(files[0]["id"]) if files else None
+
+    def _ensure_public_reader(self, file_id: str) -> None:
+        permissions = self.drive.permissions().list(
+            fileId=file_id,
+            fields="permissions(type,role)",
+            supportsAllDrives=True,
+        ).execute().get("permissions", [])
+        if not any(p.get("type") == "anyone" and p.get("role") == "reader" for p in permissions):
+            self.drive.permissions().create(
+                fileId=file_id,
+                body={"type": "anyone", "role": "reader"},
+                fields="id",
+                supportsAllDrives=True,
+            ).execute()
+
+    def upload_image(self, source_url: str, image_response: requests.Response) -> str:
+        filename = image_filename(source_url)
+        file_id = self._find_file(filename)
+        if not file_id:
+            media = MediaIoBaseUpload(
+                io.BytesIO(image_response.content),
+                mimetype=image_response.headers.get("content-type", "image/jpeg"),
+                resumable=False,
+            )
+            created = self.drive.files().create(
+                body={"name": filename, "parents": [self.folder_id]},
+                media_body=media,
+                fields="id",
+                supportsAllDrives=True,
+            ).execute()
+            file_id = str(created["id"])
+        self._ensure_public_reader(file_id)
+        return file_id
+
+    def write_preview(self, source_url: str, file_id: str) -> int:
+        rows = self.worksheet.get_all_values(value_render_option="FORMULA")
+        matches = [
+            row_number
+            for row_number, row in enumerate(rows[HEADER_ROW:], start=HEADER_ROW + 1)
+            if cell(row, self.link_column - 1) == source_url
+        ]
+        if not matches:
+            raise ValueError(f"Không có dòng cột '{COL_LINK}' khớp Post Link: {source_url}")
+        formula = f'=IMAGE("{self.drive_image_url(file_id)}")'
+        self.worksheet.batch_update(
+            [
+                {"range": gspread.utils.rowcol_to_a1(row_number, self.preview_column), "values": [[formula]]}
+                for row_number in matches
+            ],
+            value_input_option="USER_ENTERED",
+        )
+        return len(matches)
 
 
 def run(*, limit: int | None = None, source: str = SOURCE_FB_UPLOAD_ID) -> None:
@@ -295,6 +417,7 @@ def run(*, limit: int | None = None, source: str = SOURCE_FB_UPLOAD_ID) -> None:
         required_env("FB_ACCESS_TOKEN"),
         os.getenv("FB_GRAPH_VERSION", "v25.0"),
     )
+    preview_writer = DrivePreviewWriter(spreadsheet) if source == SOURCE_THUMBDOWNLOADER else None
     failures = 0
     for row in rows:
         started = time.monotonic()
@@ -304,11 +427,17 @@ def run(*, limit: int | None = None, source: str = SOURCE_FB_UPLOAD_ID) -> None:
                 if source == SOURCE_FB_UPLOAD_ID
                 else meta.thumbdownloader_thumbnail_url(row.post_link)
             )
-            value = meta.create_image_hash(row.ad_account_id, url)
+            image_response = meta.download_thumbnail(url)
+            value = meta.create_image_hash(row.ad_account_id, image_response)
             worksheet.update_acell(
                 gspread.utils.rowcol_to_a1(row.row_number, hash_column), value
             )
-            print(f"Dòng {row.row_number}: {value} ({time.monotonic() - started:.1f}s)")
+            preview_note = ""
+            if preview_writer:
+                file_id = preview_writer.upload_image(row.post_link, image_response)
+                match_count = preview_writer.write_preview(row.post_link, file_id)
+                preview_note = f"; Drive + Preview {match_count} dòng"
+            print(f"Dòng {row.row_number}: {value}{preview_note} ({time.monotonic() - started:.1f}s)")
         except Exception as exc:  # noqa: BLE001
             failures += 1
             print(f"Dòng {row.row_number}: Lỗi Image Hash: {exc}")
