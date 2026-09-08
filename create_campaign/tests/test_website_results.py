@@ -25,9 +25,9 @@ class PostReadTests(unittest.TestCase):
 
     def test_reads_video_id_from_new_post_attachment(self):
         with patch.object(website_results, "Post") as post:
-            post.return_value.api_get.return_value = {
-                "attachments": {"data": [{"media_type": "video", "target": {"id": "999"}}]}
-            }
+            post.return_value.get_attachments.return_value = [
+                {"media_type": "video", "target": {"id": "999"}}
+            ]
             self.assertEqual(website_results.read_post_video_id("123", "456"), "999")
             post.assert_called_once_with("123_456")
 
