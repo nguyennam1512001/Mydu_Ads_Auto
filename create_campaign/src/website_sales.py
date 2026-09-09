@@ -5,6 +5,7 @@ import asyncio
 import os
 import tempfile
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -25,6 +26,7 @@ from src.sheet_client import (
 from src.telegram_client import TelegramDownloader
 from src.website_results import WebsiteResultWriter, read_post_once
 from src.website_sheet_by_row import read_website_sales_rows_by_row
+from src.video_campaign import image_hash_for_account
 
 
 def numbered_name(base: str, label: str, index: int, total: int) -> str:
@@ -43,17 +45,22 @@ def required_env(name: str) -> str:
     return value
 
 
-async def run(*, limit: int | None = None) -> None:
+async def run(*, limit: int | None = None, use_existing_video: bool = False) -> None:
+    if limit is not None and limit <= 0:
+        raise ValueError("limit phải lớn hơn 0")
     load_dotenv()
     init_api()
-    try:
-        telegram_api_id = int(required_env("TELEGRAM_API_ID"))
-    except ValueError as exc:
-        raise ValueError("TELEGRAM_API_ID phải là số nguyên") from exc
+    if not use_existing_video:
+        try:
+            telegram_api_id = int(required_env("TELEGRAM_API_ID"))
+        except ValueError as exc:
+            raise ValueError("TELEGRAM_API_ID phải là số nguyên") from exc
 
     worksheet = get_worksheet()
     asset_worksheet = get_worksheet("Bài viết")
-    rows = read_website_sales_rows_by_row(worksheet, asset_worksheet)
+    rows = read_website_sales_rows_by_row(
+        worksheet, asset_worksheet, use_existing_video=use_existing_video
+    )
     if limit is not None:
         rows = rows[:limit]
     if not rows:
@@ -63,11 +70,13 @@ async def run(*, limit: int | None = None) -> None:
     result_writer = WebsiteResultWriter(asset_worksheet)
     failures = 0
     accounts: dict[str, object] = {}
-    async with TelegramDownloader(
+    thumbnails: dict[tuple[str, str], str] = {}
+    telegram_context = nullcontext() if use_existing_video else TelegramDownloader(
         telegram_api_id,
         required_env("TELEGRAM_API_HASH"),
         required_env("TELEGRAM_SESSION"),
-    ) as telegram:
+    )
+    async with telegram_context as telegram:
         for row in rows:
             started = time.monotonic()
             try:
@@ -76,13 +85,28 @@ async def run(*, limit: int | None = None) -> None:
                     account = get_ad_account(row.ad_account_id)
                     accounts[row.ad_account_id] = account
 
-                with tempfile.TemporaryDirectory(prefix="website-sales-") as temp_dir:
-                    video_path = await telegram.download_video(
-                        row.telegram_link, Path(temp_dir)
-                    )
-                    video_id = upload_video(account, str(video_path))
-                    result_writer.write_upload(row.row_number, video_id)
-                    thumbnail_url = wait_for_video_thumbnail(video_id)
+                image_hash = ""
+                thumbnail_url = ""
+                if use_existing_video:
+                    video_id = row.video_id
+                    # Sheet users mark unavailable thumbnails with "ko".
+                    raw_hash = row.image_hash
+                    if raw_hash.strip().casefold() in {"ko", "no", "none", "null", "-"}:
+                        raw_hash = ""
+                    image_hash = image_hash_for_account(raw_hash, row.ad_account_id)
+                    if not image_hash:
+                        key = (row.ad_account_id, video_id)
+                        if key not in thumbnails:
+                            thumbnails[key] = wait_for_video_thumbnail(video_id)
+                        thumbnail_url = thumbnails[key]
+                else:
+                    with tempfile.TemporaryDirectory(prefix="website-sales-") as temp_dir:
+                        video_path = await telegram.download_video(
+                            row.telegram_link, Path(temp_dir)
+                        )
+                        video_id = upload_video(account, str(video_path))
+                        result_writer.write_upload(row.row_number, video_id)
+                        thumbnail_url = wait_for_video_thumbnail(video_id)
 
                 targeting = {
                     "geo_locations": {"countries": ["VN"]},
@@ -156,6 +180,7 @@ async def run(*, limit: int | None = None) -> None:
                                 title=row.title,
                                 video_id=video_id,
                                 thumbnail_url=thumbnail_url,
+                                image_hash=image_hash,
                                 name=f"Creative - {ad_name}",
                                 call_to_action_type="ORDER_NOW",
                                 link=row.website_url,
@@ -172,7 +197,7 @@ async def run(*, limit: int | None = None) -> None:
                             result_writer.write_posts(row.row_number, post_results)
                         ads_before += ads_in_adset
                 message = (
-                    f"Thành công Website {row.campaign_count}-"
+                    f"Thành công Website{' Video' if use_existing_video else ''} {row.campaign_count}-"
                     f"{row.adset_count}-{row.ad_count} - Campaign: "
                     f"{', '.join(campaign_ids)}, AdSet: {len(adset_ids)}, "
                     f"Ad: {len(ad_ids)}"
@@ -193,9 +218,14 @@ async def run(*, limit: int | None = None) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Tạo quảng cáo doanh số Website")
     parser.add_argument("--limit", type=int, help="Giới hạn số dòng xử lý")
+    parser.add_argument(
+        "--source", choices=["telegram", "fb_upload_id"], default="telegram",
+        help="Nguồn video: Telegram hoặc FB_UPLOAD_ID có sẵn trong Bài viết",
+    )
     args = parser.parse_args()
-    asyncio.run(run(limit=args.limit))
+    asyncio.run(run(limit=args.limit, use_existing_video=args.source == "fb_upload_id"))
 
 
 if __name__ == "__main__":
     main()
+

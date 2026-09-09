@@ -94,6 +94,8 @@ class WebsiteSalesRow:
     age_min: int | None = None
     age_max: int | None = None
     genders: list[int] | None = None
+    video_id: str = ""
+    image_hash: str = ""
 
 def _get_client() -> gspread.Client:
     """
@@ -525,3 +527,4 @@ def write_result(worksheet: gspread.Worksheet, row_number: int, message: str) ->
         _RESULT_COLUMN_CACHE[id(worksheet)] = result_column
     cell_address = gspread.utils.rowcol_to_a1(row_number, result_column)
     worksheet.update_acell(cell_address, message)
+

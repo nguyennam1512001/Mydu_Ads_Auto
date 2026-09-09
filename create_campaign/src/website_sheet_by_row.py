@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gspread
+from urllib.parse import urlparse
 
 from src.sheet_client import (
     HEADER_ROW,
@@ -36,11 +37,13 @@ from src.sheet_client import (
 def read_website_sales_rows_by_row(
     worksheet: gspread.Worksheet,
     asset_worksheet: gspread.Worksheet,
+    *,
+    use_existing_video: bool = False,
 ) -> list[WebsiteSalesRow]:
     """
     Đọc campaign Website theo đúng số hàng giữa tab Lên Camp và tab Bài viết.
 
-    Ví dụ Lên Camp hàng 22 luôn lấy Telegram_video_link, Text_Content, Title
+    Ví dụ Lên Camp hàng 22 luôn lấy Telegram_video_link (hoặc FB_UPLOAD_ID), Text_Content, Title
     từ Bài viết hàng 22. Mã chỉ dùng làm tên/nhãn, không dùng để lookup và
     không kiểm tra trùng Mã.
     """
@@ -70,10 +73,12 @@ def read_website_sales_rows_by_row(
         COL_RESULT,
     ]
     columns = {name: _col_to_index(header_map, name) for name in required_columns}
+    source_column = "FB_UPLOAD_ID" if use_existing_video else COL_TELEGRAM_LINK
     asset_columns = {
         name: _col_to_index(asset_header_map, name)
-        for name in [COL_TELEGRAM_LINK, COL_TEXT_CONTENT, COL_TITLE]
+        for name in [source_column, COL_TEXT_CONTENT, COL_TITLE]
     }
+    image_hash_index = asset_header_map.get("image hash")
 
     def cell(row: list[str], name: str) -> str:
         index = columns[name]
@@ -124,14 +129,14 @@ def read_website_sales_rows_by_row(
             continue
 
         asset_row = asset_values[asset_index]
-        telegram_link = asset_cell(asset_row, COL_TELEGRAM_LINK)
+        source_value = asset_cell(asset_row, source_column)
         text_content = asset_cell(asset_row, COL_TEXT_CONTENT)
         title = asset_cell(asset_row, COL_TITLE)
 
         missing_assets = [
             name
             for name, value in [
-                (COL_TELEGRAM_LINK, telegram_link),
+                (source_column, source_value),
                 (COL_TEXT_CONTENT, text_content),
                 (COL_TITLE, title),
             ]
@@ -146,7 +151,17 @@ def read_website_sales_rows_by_row(
             continue
 
         try:
+            if use_existing_video:
+                if not source_value.isascii() or not source_value.isdigit():
+                    raise ValueError("FB_UPLOAD_ID phải là một ID video dạng số")
+                url = urlparse(raw[COL_WEBSITE_URL])
+                if url.scheme not in ("http", "https") or not url.netloc:
+                    raise ValueError("URL_Ladi phải là URL http/https hợp lệ")
+                if not raw[COL_PIXEL].isascii() or not raw[COL_PIXEL].isdigit():
+                    raise ValueError("Pixel phải là ID dạng số")
             daily_budget = _parse_budget(raw[COL_DAILY_BUDGET])
+            if use_existing_video and daily_budget <= 0:
+                raise ValueError("DAILY_BUDGET phải lớn hơn 0")
             schedule = _parse_schedule(raw[COL_SCHEDULE_DATE], raw[COL_SCHEDULE_TIME])
             age_min, age_max = _parse_age(raw[COL_AGE])
             genders = _parse_gender(raw[COL_GENDER])
@@ -163,7 +178,11 @@ def read_website_sales_rows_by_row(
                 campaign_name=raw[COL_CAMPAIGN_NAME],
                 group_ad_name=raw[COL_GROUP_AD_NAME] or None,
                 daily_budget=daily_budget,
-                telegram_link=telegram_link,
+                telegram_link="" if use_existing_video else source_value,
+                video_id=source_value if use_existing_video else "",
+                image_hash=(asset_row[image_hash_index].strip()
+                            if use_existing_video and image_hash_index is not None
+                            and image_hash_index < len(asset_row) else ""),
                 text_content=text_content,
                 title=title,
                 website_url=raw[COL_WEBSITE_URL],
@@ -179,3 +198,4 @@ def read_website_sales_rows_by_row(
         )
 
     return rows
+
