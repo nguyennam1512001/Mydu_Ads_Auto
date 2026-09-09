@@ -291,10 +291,10 @@ class MetaImageHashClient:
                 page.goto(target, wait_until="domcontentloaded", timeout=120_000)
                 items = page.locator("#volatile_content .itemwrap")
                 try:
-                    items.first.wait_for(timeout=120_000)
+                    items.first.wait_for(timeout=20_000)
                 except PlaywrightTimeoutError as exc:
                     raise RuntimeError(
-                        "ThumbDownloader không tạo thumbnail trong 120 giây "
+                        "ThumbDownloader không tạo thumbnail trong 20 giây "
                         f"(title: {page.title()[:120]})"
                     ) from exc
                 for index in range(items.count()):
