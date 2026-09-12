@@ -78,6 +78,15 @@ def normalize_group_name(value: str) -> str:
     return " ".join(value.casefold().strip().split())
 
 
+def parse_start_date(value: str | None) -> datetime | None:
+    if not value or not value.strip():
+        return None
+    try:
+        return datetime.strptime(value.strip(), "%d/%m/%Y")
+    except ValueError as exc:
+        raise ValueError("Ngày bắt đầu phải có định dạng d/m/yyyy, ví dụ 08/09/2026") from exc
+
+
 def get_spreadsheet():
     sheet_id = required_env("GOOGLE_SHEET_ID")
     credentials_json = required_env("GOOGLE_CREDENTIALS")
@@ -473,7 +482,7 @@ async def find_group(client: TelegramClient):
     )
 
 
-async def scan_telegram_good_ads(ws) -> None:
+async def scan_telegram_good_ads(ws, start_date: datetime | None = None) -> None:
     known_permalinks = existing_permalinks(ws)
     token = os.getenv("FB_ACCESS_TOKEN", "").strip()
     if not token:
@@ -497,12 +506,19 @@ async def scan_telegram_good_ads(ws) -> None:
 
         entity = await find_group(client)
         print(f"Đã tìm thấy group: {GROUP_NAME}")
-        print("Bắt đầu quét toàn bộ lịch sử tin nhắn khả dụng...")
+        if start_date is None:
+            print("Bắt đầu quét toàn bộ lịch sử tin nhắn khả dụng...")
+        else:
+            print(
+                "Chỉ lấy các bài có Camp ngày từ "
+                f"{start_date.strftime('%d/%m/%Y')} trở đi."
+            )
 
         pending: list[GoodAd] = []
         seen_permalinks = set(known_permalinks)
         scanned = 0
         valid = 0
+        skipped_before_start = 0
         skipped_existing = 0
         video_found = 0
         video_errors = 0
@@ -517,6 +533,13 @@ async def scan_telegram_good_ads(ws) -> None:
 
             valid += 1
             code, date_value, page, ads_sp, permalink = parsed
+
+            if start_date is not None:
+                camp_date = datetime.strptime(date_value, "%d/%m/%Y")
+                if camp_date < start_date:
+                    skipped_before_start += 1
+                    continue
+
             if permalink in seen_permalinks:
                 skipped_existing += 1
                 continue
@@ -558,6 +581,7 @@ async def scan_telegram_good_ads(ws) -> None:
         append_rows(ws, pending)
         print(
             f"Hoàn tất: quét {scanned} tin nhắn, nhận dạng {valid} tin đúng form, "
+            f"bỏ {skipped_before_start} bài trước ngày bắt đầu, "
             f"bỏ {skipped_existing} permalink đã có, ghi {len(pending)} dòng, "
             f"lấy được {video_found} Video id, lỗi Meta {video_errors}."
         )
@@ -584,7 +608,8 @@ async def main_async() -> None:
     if action != ACTION_SCAN:
         raise ValueError(f"Chức năng không hợp lệ: {action}")
 
-    await scan_telegram_good_ads(ws)
+    start_date = parse_start_date(os.getenv("GOOD_ADS_START_DATE", ""))
+    await scan_telegram_good_ads(ws, start_date=start_date)
 
 
 def main() -> None:
@@ -593,4 +618,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
