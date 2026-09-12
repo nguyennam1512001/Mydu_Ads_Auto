@@ -116,21 +116,6 @@ def get_header_map(ws) -> tuple[list[str], dict[str, int]]:
     return headers, header_map
 
 
-def existing_permalinks(ws) -> set[str]:
-    values = ws.get_all_values()
-    if not values:
-        return set()
-    _, header_map = get_header_map(ws)
-    idx = header_map[normalize_header(COL_PERMALINK)]
-    result: set[str] = set()
-    for row in values[HEADER_ROW:]:
-        if idx < len(row):
-            value = row[idx].strip()
-            if value:
-                result.add(value)
-    return result
-
-
 def clean_value(value: str) -> str:
     return value.strip().strip("`*_ ")
 
@@ -483,7 +468,6 @@ async def find_group(client: TelegramClient):
 
 
 async def scan_telegram_good_ads(ws, start_date: datetime | None = None) -> None:
-    known_permalinks = existing_permalinks(ws)
     token = os.getenv("FB_ACCESS_TOKEN", "").strip()
     if not token:
         print("CẢNH BÁO: Thiếu FB_ACCESS_TOKEN -> vẫn ghi dữ liệu nhưng cột Video id sẽ để trống.")
@@ -515,11 +499,9 @@ async def scan_telegram_good_ads(ws, start_date: datetime | None = None) -> None
             )
 
         pending: list[GoodAd] = []
-        seen_permalinks = set(known_permalinks)
         scanned = 0
         valid = 0
         skipped_before_start = 0
-        skipped_existing = 0
         video_found = 0
         video_errors = 0
         blocked_pages: set[str] = set()
@@ -539,10 +521,6 @@ async def scan_telegram_good_ads(ws, start_date: datetime | None = None) -> None
                 if camp_date < start_date:
                     skipped_before_start += 1
                     continue
-
-            if permalink in seen_permalinks:
-                skipped_existing += 1
-                continue
 
             video_id = ""
             if token:
@@ -576,13 +554,12 @@ async def scan_telegram_good_ads(ws, start_date: datetime | None = None) -> None
                     video_id=video_id,
                 )
             )
-            seen_permalinks.add(permalink)
 
         append_rows(ws, pending)
         print(
             f"Hoàn tất: quét {scanned} tin nhắn, nhận dạng {valid} tin đúng form, "
             f"bỏ {skipped_before_start} bài trước ngày bắt đầu, "
-            f"bỏ {skipped_existing} permalink đã có, ghi {len(pending)} dòng, "
+            f"ghi {len(pending)} dòng, "
             f"lấy được {video_found} Video id, lỗi Meta {video_errors}."
         )
     finally:
