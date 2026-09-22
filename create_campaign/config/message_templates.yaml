@@ -28,3 +28,14 @@ templates:
         - content_type: text
           title: "Tư vấn size cho chị!"
           payload: "TU_VAN_SIZE"
+
+  "Váy Đầm Mydu":
+  - message:
+      text: "Váy, Đầm Thiết Kế MyDu xin chào! Váy, Đầm Thiết Kế MyDu có đủ size S, M, L, XL, XXL!"
+      quick_replies:
+        - content_type: text
+          title: "Báo giá chị giá váy này nhé!"
+          payload: "XEM_BANG_GIA"
+        - content_type: text
+          title: "Tư vấn size cho chị!"
+          payload: "TU_VAN_SIZE"
