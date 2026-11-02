@@ -1,40 +1,10 @@
 templates:
-  "MDU Shop":
-    - message:
-        text: "Cảm ơn chị đã nhắn tin tới MDU Shop - Thời trang thiết kế cao cấp MDU chính hãng!"
-        quick_replies:
-          - content_type: text
-            title: "Báo giá váy cho chị !"
-            payload: "XEM_BANG_GIA"
-
-  "MDU Vietnam":
-    - message:
-        text: "MDU Vietnam xin chào! Váy, Đầm thiết kế cao cấp MDU đủ size S, M, L, XL, XXL !"
-        quick_replies:
-          - content_type: text
-            title: "Báo giá chị giá váy này nhé !"
-            payload: "XEM_BANG_GIA"
-          - content_type: text
-            title: "Tư vấn size cho chị!"
-            payload: "TU_VAN_SIZE"
-
-  "MDU by Linda Duong":
+  "MDU Váy Thiết Kế Chính Hãng":
   - message:
-      text: "Linda Duong xin chào! Váy, Đầm thiết kế cao cấp Linda Duong có đủ size S, M, L, XL, XXL !"
+      text: "Cảm ơn chị đã nhắn tin tới MDU Váy Thiết Kế Chính Hãng!"
       quick_replies:
         - content_type: text
-          title: "Báo giá chị giá váy này nhé !"
-          payload: "XEM_BANG_GIA"
-        - content_type: text
-          title: "Tư vấn size cho chị!"
-          payload: "TU_VAN_SIZE"
-
-  "Váy Đầm Mydu":
-  - message:
-      text: "Váy, Đầm Thiết Kế MyDu xin chào! Váy, Đầm Thiết Kế MyDu có đủ size S, M, L, XL, XXL!"
-      quick_replies:
-        - content_type: text
-          title: "Báo giá chị giá váy này nhé!"
+          title: "Báo giá váy cho chị !"
           payload: "XEM_BANG_GIA"
         - content_type: text
           title: "Tư vấn size cho chị!"
